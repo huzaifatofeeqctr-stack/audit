@@ -4,4 +4,5 @@ spotdraft-auth.json
 
 # Downloaded signed contracts (confidential pricing) — keep local only
 *(T-*).pdf
+_audit_*.pdf
 _dl.bin
