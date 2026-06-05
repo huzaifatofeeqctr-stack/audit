@@ -1,0 +1,28 @@
+{
+  "opp": {
+    "Id": "006Uw00000aHWoLIAW",
+    "Name": "Heart & Soil | Upsell | 6 - 2026",
+    "AccountId": "0013i0000203Oe3AAE",
+    "OwnerId": "0053i000001G4xnAAC",
+    "OwnerName": "Dan Dravis",
+    "OwnerEmail": "dan@postscript.io",
+    "Type": "Amendment",
+    "Start_Date__c": "2026-06-02",
+    "DocuSign_End_Date__c": "2026-08-31"
+  },
+  "olis": [
+    { "product": "Fondue", "UnitPrice": 10348.46, "Platform_Fee__c": 159, "TotalPrice": 10348.46 },
+    { "product": "SMS Marketing", "UnitPrice": 4000, "Platform_Fee__c": 0, "TotalPrice": 4000 },
+    { "product": "Postscript Plus", "UnitPrice": 1500, "Platform_Fee__c": 0, "TotalPrice": 1500 },
+    { "product": "Dedicated Short Code", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 },
+    { "product": "Postscript AI", "UnitPrice": 1299, "Platform_Fee__c": 499, "TotalPrice": 1299 },
+    { "product": "IT Campaigns", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 }
+  ],
+  "contract_record": {
+    "Id": "a2pUw00000109ynIAA",
+    "Name": "Postscript Proposed Service Order",
+    "Status__c": "Completed",
+    "Date_Contract_Completed__c": "2026-06-02"
+  },
+  "slack": { "channel": "C08JS7N86D6", "thread_ts": "1780447103.909469" }
+}

@@ -1,0 +1,17 @@
+{
+  "shops": ["Table & Twine (864124)"],
+  "services": ["SMS Marketing"],
+  "term_start": "2026-06-15",
+  "term_end": "2027-05-31",
+  "sms_marketing": {
+    "package": "Professional",
+    "platform_fee": 500,
+    "platform_fee_waived": true,
+    "min_commit": 500,
+    "min_commit_cadence": "monthly",
+    "dsc": { "included": false, "fee": null, "waived": false }
+  },
+  "addendums": [],
+  "is_amendment_or_renewal": false,
+  "notes": "New Business, SMS Marketing only. Package Professional. Platform fee $500/mo WAIVED. Min commit $500/month, temporarily waived Jun15-Aug31. No DSC included. Credit $500 (exp 2026-06-30)."
+}

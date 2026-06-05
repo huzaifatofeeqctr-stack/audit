@@ -1,0 +1,26 @@
+{
+  "opp": {
+    "Id": "006Uw00000ZBDPFIA5",
+    "Name": "Larine | New Business | 6 - 2026",
+    "AccountId": "001Uw00000OHRioIAH",
+    "OwnerId": "005Uw00000CBkILIA1",
+    "OwnerName": "Matthew Rivoire",
+    "OwnerEmail": "matthew.rivoire@postscript.io",
+    "Type": "New Business",
+    "Start_Date__c": "2026-06-01",
+    "DocuSign_End_Date__c": "2027-06-30"
+  },
+  "olis": [
+    { "product": "SMS Marketing", "UnitPrice": 4000, "Platform_Fee__c": 0, "TotalPrice": 4000 },
+    { "product": "Postscript Plus", "UnitPrice": 2000, "Platform_Fee__c": 2000, "TotalPrice": 2000 },
+    { "product": "Postscript AI", "UnitPrice": 1499, "Platform_Fee__c": 699, "TotalPrice": 1499 },
+    { "product": "Dedicated Short Code", "UnitPrice": 250, "Platform_Fee__c": 250, "TotalPrice": 250 }
+  ],
+  "contract_record": {
+    "Id": "a2pUw000000zDTNIA2",
+    "Name": "Postscript Proposed Service Order",
+    "Status__c": "Completed",
+    "Date_Contract_Completed__c": "2026-05-27"
+  },
+  "slack": { "channel": "C08JS7N86D6", "thread_ts": "" }
+}

@@ -1,0 +1,27 @@
+{
+  "opp": {
+    "Id": "006Uw00000aHD2YIAW",
+    "Name": "MIA Shoes | Upsell | 6 - 2026",
+    "AccountId": "0013i00001zRvjlAAC",
+    "OwnerId": "0056e00000DcJ4vAAF",
+    "OwnerName": "Paige Cunningham",
+    "OwnerEmail": "paige.cunningham@postscript.io",
+    "Type": "Amendment",
+    "Start_Date__c": "2026-06-04",
+    "DocuSign_End_Date__c": "2027-05-31"
+  },
+  "olis": [
+    { "product": "IT Campaigns", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 },
+    { "product": "SMS Marketing", "UnitPrice": 2000, "Platform_Fee__c": 0, "TotalPrice": 2000 },
+    { "product": "IT Automations", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 },
+    { "product": "Postscript AI", "UnitPrice": 499, "Platform_Fee__c": 99, "TotalPrice": 499 },
+    { "product": "Shopper", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 }
+  ],
+  "contract_record": {
+    "Id": "a2pUw0000010H9xIAE",
+    "Name": "Postscript Proposed Service Order",
+    "Status__c": "Completed",
+    "Date_Contract_Completed__c": "2026-06-03"
+  },
+  "slack": { "channel": "C08JS7N86D6", "thread_ts": "" }
+}

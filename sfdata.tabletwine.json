@@ -1,0 +1,23 @@
+{
+  "opp": {
+    "Id": "006Uw00000ZztRdIAJ",
+    "Name": "Table & Twine | New Business | 6 - 2026",
+    "AccountId": "0016e00003I2bH3AAJ",
+    "OwnerId": "0056e00000BTcOJAA1",
+    "OwnerName": "Noah Alexander",
+    "OwnerEmail": "noah.alexander@postscript.io",
+    "Type": "New Business",
+    "Start_Date__c": "2026-06-15",
+    "DocuSign_End_Date__c": "2027-05-31"
+  },
+  "olis": [
+    { "product": "SMS Marketing", "UnitPrice": 500, "Platform_Fee__c": 0, "TotalPrice": 500 }
+  ],
+  "contract_record": {
+    "Id": "a2pUw0000010DcbIAE",
+    "Name": "Postscript Proposed Service Order",
+    "Status__c": "Completed",
+    "Date_Contract_Completed__c": "2026-06-03"
+  },
+  "slack": { "channel": "C08JS7N86D6", "thread_ts": "1780503670.854179" }
+}

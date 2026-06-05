@@ -1,0 +1,29 @@
+{
+  "opp": {
+    "Id": "006Uw00000XXS7NIAX",
+    "Name": "Apothekary | Winback | 6 - 2026",
+    "AccountId": "0013i000023Nb0wAAC",
+    "OwnerId": "005Uw00000CBkILIA1",
+    "OwnerName": "Matthew Rivoire",
+    "OwnerEmail": "matthew.rivoire@postscript.io",
+    "Type": "Winback",
+    "Start_Date__c": "2026-06-01",
+    "DocuSign_End_Date__c": "2027-06-30"
+  },
+  "olis": [
+    { "product": "SMS Marketing", "UnitPrice": 23333, "Platform_Fee__c": 0, "TotalPrice": 23333 },
+    { "product": "Postscript AI", "UnitPrice": 5365.6, "Platform_Fee__c": 699, "TotalPrice": 5365.6 },
+    { "product": "Postscript Plus", "UnitPrice": 1500, "Platform_Fee__c": 1500, "TotalPrice": 1500 },
+    { "product": "Dedicated Short Code", "UnitPrice": 0, "Platform_Fee__c": 0, "TotalPrice": 0 },
+    { "product": "IT Campaigns", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 },
+    { "product": "IT Automations", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 },
+    { "product": "Shopper", "UnitPrice": 0, "Platform_Fee__c": null, "TotalPrice": 0 }
+  ],
+  "contract_record": {
+    "Id": "a2pUw000000y54rIAA",
+    "Name": "Postscript Proposed Service Order",
+    "Status__c": "Completed",
+    "Date_Contract_Completed__c": "2026-06-03"
+  },
+  "slack": { "channel": "C08JS7N86D6", "thread_ts": "" }
+}

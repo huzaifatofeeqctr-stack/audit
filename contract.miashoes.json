@@ -1,0 +1,19 @@
+{
+  "shops": ["MIA Shoes (444627)"],
+  "services": ["SMS Marketing", "Postscript AI"],
+  "term_start": "2026-06-04",
+  "term_end": "2027-05-31",
+  "sms_marketing": {
+    "package": "Professional",
+    "platform_fee": 500,
+    "platform_fee_waived": true,
+    "min_commit": 2000,
+    "min_commit_cadence": "monthly",
+    "dsc": { "included": false, "fee": null, "waived": false }
+  },
+  "addendums": [
+    { "name": "Postscript AI", "platform_fee": 99, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null }
+  ],
+  "is_amendment_or_renewal": true,
+  "notes": "Opp Type=Amendment. SMS Marketing + Postscript AI only (no Plus, no DSC). SMS platform $500/mo WAIVED. Min commit $2,000/month. AI $99/mo. Credit $297."
+}

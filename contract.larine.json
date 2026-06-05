@@ -1,0 +1,20 @@
+{
+  "shops": ["Larine (0)"],
+  "services": ["SMS Marketing", "Postscript Plus", "Postscript AI"],
+  "term_start": "2026-06-01",
+  "term_end": "2027-06-30",
+  "sms_marketing": {
+    "package": "Enterprise",
+    "platform_fee": 2000,
+    "platform_fee_waived": true,
+    "min_commit": 12000,
+    "min_commit_cadence": "quarterly",
+    "dsc": { "included": true, "fee": 250, "waived": false }
+  },
+  "addendums": [
+    { "name": "Postscript Plus", "platform_fee": 2000, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null },
+    { "name": "Postscript AI", "platform_fee": 699, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null }
+  ],
+  "is_amendment_or_renewal": false,
+  "notes": "New Business. SMS platform fee $2000/mo WAIVED. SMS min commit $12,000/quarter (= $4,000/mo); temporary min-commit discount to $0 for Jun1-Aug31. DSC base $750/mo DISCOUNTED to $250/mo (not waived). Plus $2,000/mo (expires 2026-09-30). AI $699/mo. Credit $12,097."
+}

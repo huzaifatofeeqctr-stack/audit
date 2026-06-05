@@ -1,0 +1,20 @@
+{
+  "shops": ["Alpha Industries (855116)"],
+  "services": ["SMS Marketing", "Postscript Plus", "Postscript AI"],
+  "term_start": "2026-05-01",
+  "term_end": "2027-04-30",
+  "sms_marketing": {
+    "package": "Enterprise",
+    "platform_fee": 2000,
+    "platform_fee_waived": true,
+    "min_commit": 21000,
+    "min_commit_cadence": "quarterly",
+    "dsc": { "included": false, "fee": null, "waived": false }
+  },
+  "addendums": [
+    { "name": "Postscript Plus", "platform_fee": 1500, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null },
+    { "name": "Postscript AI", "platform_fee": 699, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null }
+  ],
+  "is_amendment_or_renewal": false,
+  "notes": "New Business Service Order, executed 2026-04-23. SMS platform fee $2000/mo WAIVED. Min commit $21,000/quarter (= $7,000/mo). DSC NOT included. Plus addendum expires 2026-08-31 (shorter than overall term). Initial Credit $11,000 (exp 2026-10-31); Retention Credit $6,000. Bundle discount rates SMS $0.0028 / MMS $0.0100."
+}

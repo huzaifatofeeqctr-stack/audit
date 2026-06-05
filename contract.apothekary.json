@@ -1,0 +1,20 @@
+{
+  "shops": ["Apothekary (25066)"],
+  "services": ["SMS Marketing", "Postscript Plus", "Postscript AI"],
+  "term_start": "2026-07-01",
+  "term_end": "2027-07-31",
+  "sms_marketing": {
+    "package": "Enterprise",
+    "platform_fee": 2000,
+    "platform_fee_waived": true,
+    "min_commit": 70000,
+    "min_commit_cadence": "quarterly",
+    "dsc": { "included": true, "fee": 750, "waived": true }
+  },
+  "addendums": [
+    { "name": "Postscript Plus", "platform_fee": 1500, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null },
+    { "name": "Postscript AI", "platform_fee": 699, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null }
+  ],
+  "is_amendment_or_renewal": false,
+  "notes": "Winback. Term Jul 1 2026 - Jul 31 2027. SMS platform fee $2000/mo WAIVED. Min commit $70,000/quarter (=$23,333.33/mo), temp discount to $0 Jul-Sep. DSC $750/mo WAIVED. Plus $1500/mo (expires Oct 31 2026). AI $699/mo. Credit $50,000."
+}

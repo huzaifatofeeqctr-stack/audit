@@ -1,0 +1,20 @@
+{
+  "shops": ["Heart & Soil (53102)"],
+  "services": ["SMS Marketing", "Postscript Plus", "Postscript AI"],
+  "term_start": "2026-06-02",
+  "term_end": "2026-08-31",
+  "sms_marketing": {
+    "package": "Enterprise",
+    "platform_fee": 2000,
+    "platform_fee_waived": true,
+    "min_commit": 10000,
+    "min_commit_cadence": "monthly",
+    "dsc": { "included": true, "fee": 750, "waived": true }
+  },
+  "addendums": [
+    { "name": "Postscript Plus", "platform_fee": 1500, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null },
+    { "name": "Postscript AI", "platform_fee": 499, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null }
+  ],
+  "is_amendment_or_renewal": true,
+  "notes": "Opp Type=Amendment (3-mo SO Jun2-Aug31). Fondue NOT on this Service Order. SMS platform fee $2000 WAIVED. SMS min commit $10,000/MONTH. DSC included $750/mo WAIVED for Heart & Soil. One-time Credit $1,497."
+}

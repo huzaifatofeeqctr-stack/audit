@@ -1,0 +1,27 @@
+{
+  "opp": {
+    "Id": "006Uw00000Y5AMXIA3",
+    "Name": "Alpha Industries | New Business | 4 - 2026",
+    "AccountId": "0013i0000203BwMAAU",
+    "OwnerId": "0056e00000EBCvsAAH",
+    "OwnerName": "Ryan Shea",
+    "OwnerEmail": "ryan.shea@postscript.io",
+    "Start_Date__c": "2026-05-01",
+    "DocuSign_End_Date__c": "2027-04-30"
+  },
+  "olis": [
+    { "product": "Postscript AI", "UnitPrice": 2099, "Platform_Fee__c": 699, "TotalPrice": 2099 },
+    { "product": "SMS Marketing", "UnitPrice": 7000, "Platform_Fee__c": null, "TotalPrice": 7000 },
+    { "product": "IT Automations", "UnitPrice": 0, "Platform_Fee__c": 0, "TotalPrice": 0 },
+    { "product": "IT Campaigns", "UnitPrice": 0, "Platform_Fee__c": 0, "TotalPrice": 0 },
+    { "product": "Shopper", "UnitPrice": 0, "Platform_Fee__c": 0, "TotalPrice": 0 },
+    { "product": "Postscript Plus", "UnitPrice": 1500, "Platform_Fee__c": 1500, "TotalPrice": 1500 }
+  ],
+  "contract_record": {
+    "Id": "a2pUw000000xoLlIAI",
+    "Name": "Postscript Proposed Service Order",
+    "Status__c": "Completed",
+    "Date_Contract_Completed__c": "2026-04-23"
+  },
+  "slack": { "channel": "PLACEHOLDER", "thread_ts": "PLACEHOLDER" }
+}

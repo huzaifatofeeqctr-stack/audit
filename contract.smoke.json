@@ -1,0 +1,20 @@
+{
+  "shops": ["Alpha Industries"],
+  "services": ["SMS Marketing", "Postscript AI", "Postscript Plus"],
+  "term_start": "2026-05-01",
+  "term_end": "2027-04-30",
+  "sms_marketing": {
+    "package": "SMS Marketing Pro",
+    "platform_fee": null,
+    "platform_fee_waived": false,
+    "min_commit": 7000,
+    "min_commit_cadence": "monthly",
+    "dsc": { "included": false, "fee": null, "waived": false }
+  },
+  "addendums": [
+    { "name": "Postscript AI", "platform_fee": 699, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null },
+    { "name": "Postscript Plus", "platform_fee": 1500, "platform_fee_waived": false, "min_commit": null, "min_commit_cadence": null }
+  ],
+  "is_amendment_or_renewal": false,
+  "notes": "SYNTHETIC smoke-test contract (matches the opp) - not the real PDF extraction"
+}
