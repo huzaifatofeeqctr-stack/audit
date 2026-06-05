@@ -1,0 +1,7 @@
+# Secrets — keep local only, never commit (see note in sf-lib.ps1)
+sf-auth.json
+spotdraft-auth.json
+
+# Downloaded signed contracts (confidential pricing) — keep local only
+*(T-*).pdf
+_dl.bin
