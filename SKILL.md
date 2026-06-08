@@ -112,14 +112,14 @@ value is a **mismatch** (report as "missing in SFDC"), not a skip.
 
 | # | Check | Contract value | Salesforce value | Pass when |
 |---|---|---|---|---|
-| 1 | Shop ID | Shop ID(s) from "Shop(s)" row | Opportunity `Shop_ID__c` | Every contract Shop ID appears (exact string match per ID). **New Business exception:** if the contract has no usable Shop ID (name-only row or a "(0)" placeholder) and the Opportunity `Type` is "New Business", mark ➖ N/A. For any other Type, a missing/unverifiable Shop ID is still a ⚠ |
+| 1 | Shop ID | Shop ID(s) from "Shop(s)" row | Opportunity `Shop_ID__c` | Every contract Shop ID appears (exact string match per ID). **New Business exception:** if the contract has no usable Shop ID (name-only row or a "(0)" placeholder) and the Opportunity `Type` is "New Business", mark ➖ N/A. For any other Type, a missing/unverifiable Shop ID is still a ⚠. **Multi-shop:** when a multi-shop SO is split into per-shop opportunities, the opp matches on its own `Shop_ID__c`; note the other shops are covered under their own opps/allocations rather than hard-failing the missing IDs |
 | 2 | Contract Start Date | Service Order Term Start Date | Opportunity `Start_Date__c` | Exact date match |
 | 3 | Contract End Date | Service Order Term End Date | Opportunity `DocuSign_End_Date__c` | Exact date match |
 | 4 | Opt-out flag | Service Order-level termination-for-convenience clause exists (any heading)? | Opportunity `Opt_Out__c` | Language present → `true`; absent → `false` |
 | 5 | Opt-out date | Effective date of the termination right | Opportunity `Opt_Out_Date__c` | Exact date match (N/A if no opt-out language and flag is correctly false) |
 | 6 | Package type | SMS Addendum Package | SMS Marketing line item `Package_Type__c` | Exact picklist match |
 | 7 | SMS Platform Fee | SMS Addendum Platform Fee, **waiver-adjusted** | SMS Marketing line item `Platform_Fee__c` | Amounts equal. **Waiver rule:** if waived, expected SF value is $0. **For this check only, blank/null `Platform_Fee__c` counts as $0** — blank = ✅ when contract fee is waived or $0 |
-| 8 | Minimum Commitment | Minimum Commitment **converted to monthly** (quarterly ÷ 3) | Opportunity `Minimum_Spend__c` | Amounts equal |
+| 8 | Minimum Commitment | Minimum Commitment **converted to monthly** (quarterly ÷ 3). **Multi-shop allocation:** if the SMS Addendum has a *Minimum Commitment Allocation* clause splitting the total across Shop IDs (e.g. `Woolx: $22,500.00; Hanks Leather Goods (73146): $22,500.00`), use the amount allocated to **this opp's `Shop_ID__c`** (the shop the opportunity represents), converted to monthly — NOT the aggregate total | Opportunity `Minimum_Spend__c` | Amounts equal (show the allocation + the ÷3 math) |
 | 9 | DSC included | SMS Addendum has a Dedicated Short Code section with DSC fee? | "Dedicated Short Code" line item exists | Both present or both absent |
 | 10 | DSC monthly fee | DSC fee, **waiver-adjusted** (waived → $0) | DSC line item `Platform_Fee__c` | Amounts equal. **Blank/null counts as $0** — blank = ✅ when waived or $0 (blank against a real discounted fee like $200 is still a mismatch) |
 | 11 | Plus included | Postscript Plus Addendum present? | "Postscript Plus" line item exists | Both present or both absent |
@@ -139,6 +139,15 @@ Multi-shop contracts: per-Shop fees ($/mo per Shop) are expected to be
 multiplied by the number of shops only if the line item represents all shops —
 if amounts differ by an exact shop-count multiple, flag it as a ⚠ with a note
 rather than a hard fail, and say why.
+
+**Multi-shop Minimum Commitment allocation (check 8):** when the SMS Addendum
+includes a *Minimum Commitment Allocation* clause listing per-Shop-ID amounts,
+the aggregate total is NOT the figure to audit. Each shop's opportunity should
+carry that shop's allocated minimum (÷3 for quarterly cadence). Compare the
+opp's `Minimum_Spend__c` to the allocation matching the opp's own `Shop_ID__c`,
+and show the allocation breakdown in the result so the reviewer can see the
+split. Example: SO total $45,000/qtr → Woolx (6599) $22,500/qtr = $7,500/mo;
+the Woolx opp's `Minimum_Spend__c` should be $7,500, not the $15,000 aggregate.
 
 ## Output format
 
