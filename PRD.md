@@ -166,19 +166,26 @@ Result tokens: `✅ Match` · `❌ Mismatch` · `❌ Missing in SFDC` ·
 Two channels, same audit. Who gets @-mentioned depends on the **Opportunity Type**
 and whether **Postscript Plus** is on the deal.
 
-| Opportunity Type | Tag |
+**Tag only when there is a call to action.** A **clean audit (every applicable
+check ✅, 0 mismatches and 0 warnings) is posted with NO @-mention** — the result
++ the ✅ reaction is the signal. Only @-mention an owner when the audit surfaces
+something actionable (a `❌` mismatch, a `⚠` warning, a "not yet auditable", or
+anything needing a fix). This cuts thread noise (per Viv's 2026-06-09 request,
+extended to all taggees).
+
+When there *is* a call to action, route by Type:
+
+| Opportunity Type | Tag (only if there's a finding) |
 |---|---|
 | Renewal, Upsell | **Caitlin Ferson** |
 | New Business, Winback, Captured Account, Amendment | **Lola Gato** |
 | *Any of the above* **+ Postscript Plus on the deal** | **+ Viv Hu** |
 
 **Channel-specific override (important):**
-- **#closed-won-presales:** full tagging rules above, including **+Viv when PS Plus**.
-- **#sfdc-oppty-audit:** **do NOT tag Viv.** Per Viv's in-channel request
-  (2026-06-09), she and Lola want to be tagged **only when there is a call to
-  action** (a real fix needed), to cut thread noise. Practically: in #sfdc, drop
-  Viv entirely; tag the Type owner (Lola/Caitlin) — and lean toward tagging only
-  when the audit surfaces something actionable.
+- **#closed-won-presales:** rules above, including **+Viv when PS Plus** — but
+  only on deals with a finding.
+- **#sfdc-oppty-audit:** **never tag Viv** (drop her entirely), and tag the Type
+  owner (Lola/Caitlin) only when there's a call to action.
 
 User IDs (for the workflow): Caitlin `U077EJVK10R` · Lola `U07GQE3BP7F` ·
 Viv `U08CPAGU1DZ`.

@@ -181,6 +181,14 @@ the exact Salesforce field/line item to correct and the value it should be.
 Show your work for any converted values (quarterly ÷ 3, waiver → $0). Do not
 write to Salesforce or SpotDraft — this audit is read-only.
 
+**Slack tagging — tag only on a call to action.** When posting the audit to
+Slack, a **clean result (all applicable checks ✅, 0 mismatches and 0 warnings)
+gets NO @-mention** — the table plus a ✅ reaction on the alert is the signal.
+Only @-mention the owner when there is something actionable (a ❌ mismatch, a
+⚠ warning, or "not yet auditable"). Routing when there *is* a finding: Renewal /
+Upsell → Caitlin; New Business / Winback / Captured Account / Amendment → Lola;
++ Viv if the deal has Postscript Plus. In **#sfdc-oppty-audit** never tag Viv.
+
 ## Batch runs
 
 When auditing multiple Opportunities, lead the report with a summary table
