@@ -20,11 +20,12 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
+VERSION = "0.2.0"  # bump on each deploy to verify GitHub auto-deploy is live
 
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "service": "closed-won-contract-audit", "version": VERSION}
 
 
 @app.post("/audit")
