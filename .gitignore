@@ -11,3 +11,7 @@ _dl.bin
 .env
 .env.local
 railway-worker/.env
+
+# python bytecode
+__pycache__/
+*.pyc
