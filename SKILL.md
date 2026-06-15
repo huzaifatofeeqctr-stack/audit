@@ -73,6 +73,10 @@ For a true auto-renewal (case c):
   must equal the prior SO — auto-renewal renews on the **same terms**. A changed
   minimum, package, or an added product (e.g. a new AI/Plus line not in the
   renewing SO) is a ❌/⚠: it requires a signed amendment, not just a renewal.
+  **`Minimum_Spend__c = $0` is only a flag if the renewing SO has a real
+  Minimum Commitment.** Many legacy/SMS SOs list "Minimum Commitment Amount:
+  N/A" (or have no minimum section) — there `$0` is ✅ correct, not a miss. Read
+  the SO before flagging a $0 minimum.
 
 **Gate checks before auditing** (report and stop if either fails):
 - Opportunity `StageName` = "Closed Won"
