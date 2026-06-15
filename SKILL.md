@@ -41,6 +41,39 @@ name, a SpotDraft contract link, or a contract PDF. Whatever is missing, find:
    and mark the result PRELIMINARY. Do NOT fall back to a prior-term
    executed SO when the current deal has its own SO (SIGN or EXECUTED).
 
+### Auto-renewal deals (Renewal opps with no newly signed SO)
+
+Some Renewal opps reach Closed Won by **auto-renewing** a prior contract that
+contained auto-renewal language — no new SO is signed. The deterministic signal
+is `Closed_Won_Reason__c = "Auto-Renewal"`, but **that flag alone is not
+reliable** (reps sometimes mark it on deals that actually have a new SO, or whose
+prior SO does not auto-renew). Resolve the governing contract with this order:
+
+- **(a) A newer EXECUTED (Completed) SO exists for the account/shop** covering
+  the new term → audit against it normally. It's a freshly signed renewal; the
+  "Auto-Renewal" reason is cosmetic. *(Not really an auto-renewal.)*
+- **(b) A renewal SO is in Signing (SIGN)** → audit against it, mark
+  **PRELIMINARY**. The renewal is being (re)papered, not auto-renewed.
+- **(c) No new SO at all** → it's a **true auto-renewal**. The binding contract
+  is the **most recent executed SO**, carried into the new term by its
+  auto-renewal clause. This is the **one explicit exception** to "no prior-term
+  fallback." Audit the opp against that prior SO and lead the output with:
+  `🔁 AUTO-RENEWAL — no new SO; audited against prior-term SO <T-id> (auto-renewed). Pricing/terms carry forward.`
+
+For a true auto-renewal (case c):
+- **Confirm the SO actually auto-renews** — its Renewal row reads "will renew
+  for additional, successive N-month renewal terms." If it reads "will **NOT**
+  automatically renew," flag ⚠ — the auto-renewal is contractually unsupported
+  and a new SO is required (look for one in Signing).
+- **Dates (checks 2–3) roll forward:** opp `Start_Date__c` should equal prior SO
+  End + 1 day; opp `DocuSign_End_Date__c` should equal that Start + the renewal
+  term − 1 day (usually +12 months). Pass when they roll correctly; the literal
+  prior-SO dates will NOT match, so compare against the rolled-forward term.
+- **Carry-forward (checks 6–16):** package, SMS/DSC/Plus/AI fees, and minimum
+  must equal the prior SO — auto-renewal renews on the **same terms**. A changed
+  minimum, package, or an added product (e.g. a new AI/Plus line not in the
+  renewing SO) is a ❌/⚠: it requires a signed amendment, not just a renewal.
+
 **Gate checks before auditing** (report and stop if either fails):
 - Opportunity `StageName` = "Closed Won"
 - Contract status = Executed or in signature stage ("SIGN"). A SIGN-status
@@ -49,6 +82,8 @@ name, a SpotDraft contract link, or a contract PDF. Whatever is missing, find:
   `⚠ PRELIMINARY — contract in signature stage, not yet executed; terms may change before signing. Re-audit after execution.`
   Contracts in earlier stages (draft/negotiation with no published version, or
   extraction_status not "completed") fail this gate.
+  **Exception:** a true auto-renewal (above, case c) has no new contract — it
+  does not fail this gate; audit it against the auto-renewing prior SO.
 
 ## Reading the contract
 

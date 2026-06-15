@@ -114,6 +114,36 @@ select by heuristic and state our confidence:
 - Contract status = Executed or `SIGN`. Earlier stages (draft/negotiation, no
   published version, extraction not completed) fail the gate.
 
+### 4a. Auto-renewal deals
+
+A Renewal opp can reach Closed Won by **auto-renewing** a prior contract whose
+Renewal clause says it "will renew for additional, successive N-month renewal
+terms" — **with no newly signed SO**. The deterministic signal is
+`Closed_Won_Reason__c = "Auto-Renewal"`, but it is **not reliable on its own**
+(observed: reps mark it on deals that actually have a new SO, and on a deal whose
+prior SO explicitly does *not* auto-renew). Resolve the governing contract in
+this order:
+
+| Case | Situation | Audit against | Result label |
+|---|---|---|---|
+| (a) | A newer **executed** SO exists for the new term | that SO (normal audit) | standard — it's a signed renewal, "Auto-Renewal" reason is cosmetic |
+| (b) | A renewal SO is **in Signing** | that SO | **⚠ PRELIMINARY** |
+| (c) | **No new SO at all** | the most recent **executed** SO (carried by its auto-renewal clause) | **🔁 AUTO-RENEWAL** |
+
+Case (c) is the **single explicit exception** to "no prior-term fallback" (§4#3):
+a true auto-renewal has no new paper, so the prior executed SO *is* the binding
+contract. For case (c):
+- **Confirm the SO auto-renews.** If its Renewal row says "will **NOT**
+  automatically renew," flag ⚠ — the auto-renewal is contractually unsupported
+  and needs a new SO.
+- **Dates roll forward, not literal:** opp Start = prior SO End + 1 day; opp End
+  = new Start + renewal term − 1 day (usually +12 months). Compare against the
+  rolled-forward term, not the prior SO's printed dates.
+- **Terms carry forward unchanged:** package, fees, and minimum must equal the
+  prior SO. A changed minimum/package or an **added product** (new AI/Plus line
+  not in the renewing SO) is a ❌/⚠ — it requires a signed amendment, not a
+  renewal.
+
 ---
 
 ## 5. The 16-check audit
@@ -207,6 +237,7 @@ Viv `U08CPAGU1DZ`.
 | 9 | **Plus `Number_Of_Months__c` rounding.** | Reps round the Plus window to whole months, so the derived end can land ~2 weeks short of the SO's month-end (Caden Lane N=12 → 6/14 vs 6/30; Reale N=4 → 10/14 vs 10/31). Flag ⚠, low severity. |
 | 10 | **SOQL apostrophes** (e.g. "Y'all"). | Use `LIKE 'Y%all%'` instead of an escaped literal. |
 | 11 | **Ramp / temporary minimum discounts.** | A SO may discount the minimum to $0 for an intro period then step to steady-state. The opp's `Minimum_Spend__c` carries the **steady-state** figure — match against that, note the ramp. |
+| 12 | **Auto-renewals (`Closed_Won_Reason__c = "Auto-Renewal"`).** | No new SO is signed. Resolve the governing contract per §4a: newer executed SO → audit it; SO in Signing → PRELIMINARY; none → true auto-renewal against the prior executed SO (the one exception to no-prior-term-fallback). Confirm the SO actually auto-renews; verify dates rolled forward and that terms/products carry over unchanged (added product or changed minimum needs a signed amendment). The reason flag alone is unreliable. |
 
 ---
 
@@ -277,6 +308,7 @@ change ships by editing one file — no workflow rewiring.
 |---|---|
 | P0 | Stand up the n8n workflow + Railway worker for **both** channels; activate dedupe + sync-lag retry. |
 | P0 | Encode §6 tagging (incl. #sfdc no-Viv + CTA-only) in the worker. |
+| P1 | Encode §4a auto-renewal handling in the worker (key on `Closed_Won_Reason__c`, fall back to prior executed SO, roll dates forward). ✅ rule defined & tested. |
 | P1 | Pursue a **deterministic opp→contract link** (SpotDraft contract ID on the opp, or `Opportunity__c` populated) to retire the "newest contract" heuristic. |
 | P1 | Add Fondue / Gimme separate-order-form lookup so those products audit cleanly instead of flagging ⚠. |
 | P2 | Decide whether Lola is tagged on every New Business audit or only on actionable findings (pending Caitlin/Lola confirmation). |
