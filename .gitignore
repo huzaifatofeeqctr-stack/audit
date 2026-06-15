@@ -6,3 +6,8 @@ spotdraft-auth.json
 *(T-*).pdf
 _audit_*.pdf
 _dl.bin
+
+# env files (secrets — never commit)
+.env
+.env.local
+railway-worker/.env
