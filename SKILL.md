@@ -61,6 +61,13 @@ prior SO does not auto-renew). Resolve the governing contract with this order:
   `🔁 AUTO-RENEWAL — no new SO; audited against prior-term SO <T-id> (auto-renewed). Pricing/terms carry forward.`
 
 For a true auto-renewal (case c):
+- **Run the full 16-check audit anyway.** "Carry-forward" does not mean
+  "minimum-only." An auto-renewal still gets all 16 checks against the prior SO,
+  and **every** mismatch is reported — most commonly a **waived Platform Fee**
+  (the SO waives it → expected SF `Platform_Fee__c` = $0; a non-zero line item
+  like $100 is a ❌, even when the minimum is also wrong). Finding the minimum
+  error does not excuse skipping checks 6–16. A single deal can carry two or
+  more independent errors at once.
 - **Confirm the SO actually auto-renews** — its Renewal row reads "will renew
   for additional, successive N-month renewal terms." If it reads "will **NOT**
   automatically renew," flag ⚠ — the auto-renewal is contractually unsupported
@@ -230,14 +237,27 @@ Upsell → Caitlin; New Business / Winback / Captured Account / Amendment → Lo
 
 ## Batch runs
 
-When auditing multiple Opportunities, lead the report with a summary table
-using exactly these columns — the Opportunity cell links to Salesforce and the
-Contract cell links to SpotDraft:
+**Every opportunity in a batch or wave gets the full 16-check audit — no
+shortcuts.** Running fast (e.g. a 5-minute wave cadence) does not reduce the
+checks. Reporting only the minimum (or any single headline check) and dropping
+the other 15 is a defect: it lets a second mismatch on the same deal — a waived
+Platform Fee entered as $100, a wrong package, a missing DSC — go unreported.
+Each deal's reporting must surface **all** of its mismatches and warnings.
+
+Lead the report with a summary table using exactly these columns — the
+Opportunity cell links to Salesforce and the Contract cell links to SpotDraft.
+The **Mismatches** cell must list **every** ❌/⚠ for that deal, not just one:
 
 ```
 | Opportunity | Owner | Contract | Passed | Mismatches |
 |---|---|---|---|---|
-| [Acme \| NB 1-2026](https://postscript.lightning.force.com/lightning/r/Opportunity/<OPP_ID>/view) | Jane Rep | [T-12345](https://app.spotdraft.com/contracts/v2/12345) | 14/16 | Start date; Min $1 s/b $500 |
+| [Acme \| NB 1-2026](https://postscript.lightning.force.com/lightning/r/Opportunity/<OPP_ID>/view) | Jane Rep | [T-12345](https://app.spotdraft.com/contracts/v2/12345) | 13/16 | Min $1 s/b $500; SMS platform fee $100 s/b $0 (waived); start date |
 ```
 
-Then include the full per-opp detail blocks below the table.
+Then include the **full per-opp detail block** (the complete 16-row check
+table from the Output format above) for **every** deal that has any ❌ or ⚠ —
+not a one-line verdict. A deal may be summarized in one line in the table only
+when it is fully clean (all applicable checks ✅). The per-wave "Fixes" list
+must enumerate every field to correct across all deals, one line per mismatch
+(e.g. "Allegory: `Minimum_Spend__c` $500 → $2,000; SMS `Platform_Fee__c` $100 →
+$0"), so nothing actionable is hidden behind a single headline.
