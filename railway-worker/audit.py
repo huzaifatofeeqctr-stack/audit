@@ -78,9 +78,19 @@ def find_opportunity(name):
 
 
 def line_items(opp_id):
-    return clients.soql(
-        f"SELECT {LINE_FIELDS} FROM OpportunityLineItem WHERE OpportunityId = '{opp_id}'"
+    # Fetch via the parent Opportunity's child relationship rather than
+    # `FROM OpportunityLineItem` directly: OpportunityLineItem has no standalone
+    # object permission (access derives from Opportunity + Price Book), so a
+    # restricted integration user can hit INVALID_TYPE on the direct query but
+    # still read the children through the parent it already has access to.
+    rows = clients.soql(
+        f"SELECT Id, (SELECT {LINE_FIELDS} FROM OpportunityLineItems) "
+        f"FROM Opportunity WHERE Id = '{opp_id}'"
     )
+    if not rows:
+        return []
+    child = rows[0].get("OpportunityLineItems") or {}
+    return child.get("records", [])
 
 
 def account_contracts(account_id):

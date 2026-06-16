@@ -20,7 +20,7 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.4.4"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.4.5"  # bump on each deploy to verify GitHub auto-deploy is live
 
 
 @app.get("/health")
@@ -30,11 +30,16 @@ def health():
 
 @app.get("/whoami")
 def whoami():
-    """Which Salesforce user does the worker authenticate as? (diagnostic)"""
+    """Which Salesforce user does the worker authenticate as? (diagnostic)
+    Also reports a masked fingerprint of the configured SF_CLIENT_ID so we can
+    confirm which connected app the worker uses (the secret is never returned)."""
+    cid = os.environ.get("SF_CLIENT_ID", "")
+    fingerprint = (cid[:10] + "…" + cid[-6:]) if len(cid) > 18 else "(unset/short)"
     try:
-        return clients.sf_whoami()
+        info = clients.sf_whoami()
     except Exception as e:
-        return {"error": str(e)}
+        info = {"error": str(e)}
+    return {"sf_client_id_fingerprint": fingerprint, "identity": info}
 
 
 @app.post("/audit")
