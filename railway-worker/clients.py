@@ -42,6 +42,21 @@ def sf_token():
     return _sf_token_cache["token"], _sf_token_cache["instance"]
 
 
+def sf_whoami():
+    """Identify the user the connected app authenticates as (client_credentials
+    Run-As user). Helps confirm permission grants are on the right user."""
+    token, instance = sf_token()
+    r = requests.get(
+        f"{instance}/services/oauth2/userinfo",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if not r.ok:
+        return {"error": f"{r.status_code}: {r.text[:300]}"}
+    j = r.json()
+    return {k: j.get(k) for k in ("name", "preferred_username", "email", "user_id", "organization_id")}
+
+
 def soql(query):
     token, instance = sf_token()
     r = requests.get(

@@ -20,12 +20,21 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.4.3"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.4.4"  # bump on each deploy to verify GitHub auto-deploy is live
 
 
 @app.get("/health")
 def health():
     return {"ok": True, "service": "closed-won-contract-audit", "version": VERSION}
+
+
+@app.get("/whoami")
+def whoami():
+    """Which Salesforce user does the worker authenticate as? (diagnostic)"""
+    try:
+        return clients.sf_whoami()
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.post("/audit")
