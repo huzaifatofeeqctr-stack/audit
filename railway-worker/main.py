@@ -20,7 +20,7 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.3.1"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.4.0"  # bump on each deploy to verify GitHub auto-deploy is live
 
 
 @app.get("/health")
@@ -54,7 +54,7 @@ async def do_audit(req: Request):
             pass
 
     try:
-        message, clean = audit.audit_message(text, channel_id)
+        message, clean = audit.audit_message(text, channel_id, sf=body.get("sf"))
         if dry_run:
             return {"ok": True, "clean": clean, "dry_run": True, "message": message}
         clients.slack_post(channel_id, message, thread_ts=thread_ts)
