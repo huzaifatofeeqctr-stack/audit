@@ -1,6 +1,5 @@
 {
-  "name": "Closed-Won Contract Audit (#closed-won-presales)",
-  "settings": { "executionOrder": "v1" },
+  "name": "Closed-Won Contract Audit",
   "nodes": [
     {
       "parameters": {
@@ -8,325 +7,183 @@
         "channelId": { "__rl": true, "value": "C08JS7N86D6", "mode": "id" },
         "options": {}
       },
-      "id": "11111111-0001-0001-0001-000000000001",
-      "name": "Slack Trigger (closed-won)",
       "type": "n8n-nodes-base.slackTrigger",
       "typeVersion": 1,
-      "position": [-1700, 300],
-      "credentials": { "slackApi": { "id": "REPLACE_SLACK_CRED", "name": "Slack account" } }
+      "position": [-400, 200],
+      "id": "trg-closedwon",
+      "name": "Slack Trigger #closed-won",
+      "webhookId": "a872a93b-5590-485f-988c-4a464fe6769a",
+      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } }
     },
     {
       "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": false, "version": 2 },
-          "combinator": "and",
-          "conditions": [
-            { "leftValue": "={{ $json.text }}", "rightValue": "just closed", "operator": { "type": "string", "operation": "contains" } },
-            { "leftValue": "={{ $json.text }}", "rightValue": "*Name:*", "operator": { "type": "string", "operation": "contains" } }
-          ]
-        },
+        "trigger": ["message"],
+        "channelId": { "__rl": true, "value": "C0B88KMFJ3E", "mode": "id" },
         "options": {}
       },
-      "id": "11111111-0002-0002-0002-000000000002",
-      "name": "Is rattle close-won post?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [-1480, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const text = $json.text || '';\nconst m = text.match(/\\*Name:\\*\\s*(.+)/);\nif (!m) { throw new Error('No *Name:* line found in message'); }\nconst oppName = m[1].replace(/[*_>`]/g,'').trim();\nreturn [{ json: { oppName, thread_ts: $json.ts, channel: $json.channel || 'C08JS7N86D6' } }];"
-      },
-      "id": "11111111-0003-0003-0003-000000000003",
-      "name": "Parse opp name",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-1260, 300]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $env.SF_INSTANCE_URL }}/services/oauth2/token",
-        "sendBody": true,
-        "contentType": "form-urlencoded",
-        "bodyParameters": { "parameters": [
-          { "name": "grant_type", "value": "client_credentials" },
-          { "name": "client_id", "value": "={{ $env.SF_CLIENT_ID }}" },
-          { "name": "client_secret", "value": "={{ $env.SF_CLIENT_SECRET }}" }
-        ] },
-        "options": {}
-      },
-      "id": "11111111-0004-0004-0004-000000000004",
-      "name": "SF Token",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-1040, 300]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.instance_url }}/services/data/v64.0/query",
-        "sendQuery": true,
-        "queryParameters": { "parameters": [
-          { "name": "q", "value": "=SELECT Id,Name,Type,StageName,AccountId,Account.Name,Shop_ID__c,Start_Date__c,DocuSign_End_Date__c,Opt_Out__c,Opt_Out_Date__c,Minimum_Spend__c FROM Opportunity WHERE Name='{{ $('Parse opp name').item.json.oppName }}' AND StageName='Closed Won' ORDER BY CloseDate DESC LIMIT 1" }
-        ] },
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{ $json.access_token }}" } ] },
-        "options": {}
-      },
-      "id": "11111111-0005-0005-0005-000000000005",
-      "name": "SF Opp",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-820, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": { "version": 2 },
-          "combinator": "and",
-          "conditions": [
-            { "leftValue": "={{ $json.totalSize }}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }
-          ]
-        },
-        "options": {}
-      },
-      "id": "11111111-0006-0006-0006-000000000006",
-      "name": "Opp found & Closed Won?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [-600, 300]
-    },
-    {
-      "parameters": {
-        "url": "={{ $('SF Token').item.json.instance_url }}/services/data/v64.0/query",
-        "sendQuery": true,
-        "queryParameters": { "parameters": [
-          { "name": "q", "value": "=SELECT Product2.Name,Package_Type__c,Platform_Fee__c,Monthly_Fee_Minimum__c,Number_Of_Months__c,UnitPrice FROM OpportunityLineItem WHERE OpportunityId='{{ $('SF Opp').item.json.records[0].Id }}'" }
-        ] },
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{ $('SF Token').item.json.access_token }}" } ] },
-        "options": {}
-      },
-      "id": "11111111-0007-0007-0007-000000000007",
-      "name": "SF Line Items",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-380, 200]
-    },
-    {
-      "parameters": {
-        "url": "={{ $('SF Token').item.json.instance_url }}/services/data/v64.0/query",
-        "sendQuery": true,
-        "queryParameters": { "parameters": [
-          { "name": "q", "value": "=SELECT Contact.Name,Contact.Title,Contact.Email,Role,IsPrimary FROM OpportunityContactRole WHERE OpportunityId='{{ $('SF Opp').item.json.records[0].Id }}'" }
-        ] },
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{ $('SF Token').item.json.access_token }}" } ] },
-        "options": {}
-      },
-      "id": "11111111-0008-0008-0008-000000000008",
-      "name": "SF Contact Roles",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-160, 200]
-    },
-    {
-      "parameters": {
-        "url": "={{ $('SF Token').item.json.instance_url }}/services/data/v64.0/query",
-        "sendQuery": true,
-        "queryParameters": { "parameters": [
-          { "name": "q", "value": "=SELECT Name,SpotDraft_ID__c,Status__c,Date_Contract_Completed__c,CreatedDate FROM SpotDraft_Contract__c WHERE Account__c='{{ $('SF Opp').item.json.records[0].AccountId }}' ORDER BY CreatedDate DESC" }
-        ] },
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "Authorization", "value": "=Bearer {{ $('SF Token').item.json.access_token }}" } ] },
-        "options": {}
-      },
-      "id": "11111111-0009-0009-0009-000000000009",
-      "name": "SF SpotDraft Contracts",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [60, 200]
-    },
-    {
-      "parameters": {
-        "jsCode": "// Pick the newest Completed (executed) Service Order. Prefer ones named 'Service Order'.\nconst recs = ($json.records || []);\nconst completed = recs.filter(r => (r.Status__c||'').toLowerCase() === 'completed');\nconst pick = completed[0]; // already ordered by CreatedDate DESC\nif (!pick) {\n  return [{ json: { hasContract: false, reason: 'No executed (Status=Completed) Service Order found on the account yet.' } }];\n}\nreturn [{ json: { hasContract: true, contractId: pick.SpotDraft_ID__c, contractName: pick.Name, completedDate: pick.Date_Contract_Completed__c } }];"
-      },
-      "id": "11111111-0010-0010-0010-000000000010",
-      "name": "Pick executed contract",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [280, 200]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": { "version": 2 },
-          "combinator": "and",
-          "conditions": [
-            { "leftValue": "={{ $json.hasContract }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
-          ]
-        },
-        "options": {}
-      },
-      "id": "11111111-0011-0011-0011-000000000011",
-      "name": "Has executed contract?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [500, 200]
-    },
-    {
-      "parameters": {
-        "url": "=https://api.spotdraft.com/api/v2/public/contracts/{{ $json.contractId }}/key_pointers/",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [
-          { "name": "client-id", "value": "={{ $env.SPOTDRAFT_CLIENT_ID }}" },
-          { "name": "client-secret", "value": "={{ $env.SPOTDRAFT_CLIENT_SECRET }}" },
-          { "name": "Accept", "value": "application/json" }
-        ] },
-        "options": {}
-      },
-      "id": "11111111-0012-0012-0012-000000000012",
-      "name": "SpotDraft key_pointers",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [720, 120]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://api.spotdraft.com/api/v2/public/contracts/{{ $('Pick executed contract').item.json.contractId }}/download/",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [
-          { "name": "client-id", "value": "={{ $env.SPOTDRAFT_CLIENT_ID }}" },
-          { "name": "client-secret", "value": "={{ $env.SPOTDRAFT_CLIENT_SECRET }}" }
-        ] },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={}",
-        "options": { "response": { "response": { "responseFormat": "file", "outputPropertyName": "data" } } }
-      },
-      "id": "11111111-0013-0013-0013-000000000013",
-      "name": "SpotDraft download PDF",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [940, 120]
-    },
-    {
-      "parameters": { "operation": "pdf", "binaryPropertyName": "data", "options": {} },
-      "id": "11111111-0014-0014-0014-000000000014",
-      "name": "Extract PDF text",
-      "type": "n8n-nodes-base.extractFromFile",
+      "type": "n8n-nodes-base.slackTrigger",
       "typeVersion": 1,
-      "position": [1160, 120]
+      "position": [-400, 400],
+      "id": "trg-sfdc",
+      "name": "Slack Trigger #sfdc",
+      "webhookId": "b9c1f2e3-1111-4444-9999-aaaaaaaaaaaa",
+      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } }
     },
     {
       "parameters": {
-        "jsCode": "const opp = $('SF Opp').item.json.records[0];\nconst olis = $('SF Line Items').item.json.records || [];\nconst ocr = $('SF Contact Roles').item.json.records || [];\nconst kp = $('SpotDraft key_pointers').item.json; // array of {label,value}\nconst pdfText = ($('Extract PDF text').item.json.text || '').slice(0, 24000);\nconst contractId = $('Pick executed contract').item.json.contractId;\n\nconst bundle = {\n  opportunity: opp,\n  line_items: olis,\n  contact_roles: ocr,\n  spotdraft_key_pointers: kp,\n  contract_id: contractId,\n  contract_pdf_text: pdfText\n};\n\nconst user = `Run the Closed-Won Opportunity vs. SpotDraft Contract audit using the skill in the system prompt.\\n\\nReturn ONLY the Slack-formatted audit message (mrkdwn, :emoji: shortcodes, the 18-row results recap, and a short \\\"What to fix\\\" list). Do not add commentary outside the audit.\\n\\n=== DATA ===\\n` + JSON.stringify(bundle, null, 2);\n\nconst body = {\n  model: $env.AUDIT_MODEL || 'claude-opus-4-8',\n  max_tokens: 2000,\n  system: $env.AUDIT_SKILL,\n  messages: [ { role: 'user', content: user } ]\n};\nreturn [{ json: { anthropicBody: body, thread_ts: $('Parse opp name').item.json.thread_ts } }];"
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c-rattle",
+              "leftValue": "={{ $json.user || $json.bot_id || '' }}",
+              "rightValue": "U05AA8MBV9B",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "c-name",
+              "leftValue": "={{ $json.text || '' }}",
+              "rightValue": "*Name:*",
+              "operator": { "type": "string", "operation": "contains" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "id": "11111111-0015-0015-0015-000000000015",
-      "name": "Assemble Claude request",
+      "id": "if-rattle",
+      "name": "IF: Rattle deal alert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-120, 300],
+      "notesInFlow": true,
+      "notes": "Rattle bot user = U05AA8MBV9B. Also requires a *Name:* line, which drops edited/deleted/non-deal messages (their top-level text is empty)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the Rattle alert: pull the Opportunity Name, channel and thread ts.\nconst m = $input.item.json;\nconst text = m.text || '';\n\n// '*Name:* Branch | Winback | 6 - 2026'  -> 'Branch | Winback | 6 - 2026'\nconst nameMatch = text.match(/\\*Name:\\*\\s*(.+)/);\nif (!nameMatch) {\n  throw new Error('No *Name:* line found in Rattle message.');\n}\nlet name = nameMatch[1].trim();\n// strip any surrounding angle-bracket slack link wrapper, if present\nname = name.replace(/^<https?:[^|]+\\|/, '').replace(/>$/, '').trim();\n\nreturn {\n  opp_name: name,\n  soql_name: name.replace(/'/g, \"\\\\'\"),\n  channel: m.channel,\n  thread_ts: m.thread_ts || m.ts,\n  raw_text: text\n};\n"
+      },
+      "id": "parse-deal",
+      "name": "Parse deal",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1380, 120]
+      "position": [120, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://postscript.my.salesforce.com/services/data/v59.0/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "salesforceOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=SELECT Id, Name, StageName, Type, AccountId, Account.Name, Owner.Name, Shop_ID__c, Start_Date__c, DocuSign_End_Date__c, Opt_Out__c, Opt_Out_Date__c, Minimum_Spend__c, CloseDate, Closed_Won_Reason__c FROM Opportunity WHERE Name = '{{ $json.soql_name }}' AND (StageName = 'Closed Won' OR StageName LIKE '5%' OR StageName = 'Pricing & Negotiations') ORDER BY CreatedDate DESC LIMIT 1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/json" } ] },
+        "options": {}
+      },
+      "id": "sf-opp",
+      "name": "SF: Opportunity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [380, 300],
+      "credentials": { "salesforceOAuth2Api": { "id": "l3bCE3Vt1roEqml5", "name": "Salesforce account" } }
+    },
+    {
+      "parameters": {
+        "url": "https://postscript.my.salesforce.com/services/data/v59.0/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "salesforceOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=SELECT Product2.Name, Package_Type__c, Platform_Fee__c, Number_Of_Months__c, UnitPrice FROM OpportunityLineItem WHERE OpportunityId = '{{ $json.records[0].Id }}'"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/json" } ] },
+        "options": {}
+      },
+      "id": "sf-lines",
+      "name": "SF: Line Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300],
+      "credentials": { "salesforceOAuth2Api": { "id": "l3bCE3Vt1roEqml5", "name": "Salesforce account" } },
+      "notes": "Uses the Opp Id from the previous node. Product2.Name is a relationship field -> records[].Product2.Name."
+    },
+    {
+      "parameters": {
+        "url": "https://postscript.my.salesforce.com/services/data/v59.0/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "salesforceOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "=SELECT Name, Status__c, SpotDraft_ID__c, Date_Contract_Completed__c, CreatedDate FROM SpotDraft_Contract__c WHERE Account__c = '{{ $('SF: Opportunity').item.json.records[0].AccountId }}' ORDER BY Date_Contract_Completed__c DESC NULLS LAST LIMIT 15"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/json" } ] },
+        "options": {}
+      },
+      "id": "sf-contracts",
+      "name": "SF: Contracts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "credentials": { "salesforceOAuth2Api": { "id": "l3bCE3Vt1roEqml5", "name": "Salesforce account" } },
+      "notes": "Custom object SpotDraft_Contract__c. Newest completed SO first so the worker picks the governing contract."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assemble the worker payload. n8n fetched the SF data (its OAuth2 user has\n// Opportunity access), so the worker won't query Salesforce itself.\nconst parse = $('Parse deal').item.json;\nconst opp = $('SF: Opportunity').item.json.records || [];\nconst lines = $('SF: Line Items').item.json.records || [];\nconst contracts = $('SF: Contracts').item.json.records || [];\n\nreturn {\n  channel_id: parse.channel,\n  thread_ts: parse.thread_ts,\n  text: parse.raw_text,\n  sf: {\n    opp: opp[0] || null,\n    lineItems: lines,\n    contracts: contracts\n  }\n};\n"
+      },
+      "id": "build-payload",
+      "name": "Build worker payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1160, 300]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [
-          { "name": "x-api-key", "value": "={{ $env.ANTHROPIC_API_KEY }}" },
-          { "name": "anthropic-version", "value": "2023-06-01" },
-          { "name": "content-type", "value": "application/json" }
-        ] },
+        "url": "https://audit-production-54bd.up.railway.app/audit",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ JSON.stringify($json.anthropicBody) }}",
-        "options": {}
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": { "timeout": 240000 }
       },
-      "id": "11111111-0016-0016-0016-000000000016",
-      "name": "Claude audit",
+      "id": "call-worker",
+      "name": "Call audit worker",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1600, 120]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://slack.com/api/chat.postMessage",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [
-          { "name": "Authorization", "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}" },
-          { "name": "content-type", "value": "application/json; charset=utf-8" }
-        ] },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ JSON.stringify({ channel: 'C08JS7N86D6', thread_ts: $('Assemble Claude request').item.json.thread_ts, text: $json.content[0].text, mrkdwn: true }) }}",
-        "options": {}
-      },
-      "id": "11111111-0017-0017-0017-000000000017",
-      "name": "Slack post audit",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1820, 120]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://slack.com/api/chat.postMessage",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [
-          { "name": "Authorization", "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}" },
-          { "name": "content-type", "value": "application/json; charset=utf-8" }
-        ] },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ JSON.stringify({ channel: 'C08JS7N86D6', thread_ts: $('Parse opp name').item.json.thread_ts, text: ':warning: *Booking Audit — ' + $('Parse opp name').item.json.oppName + '* — NOT YET AUDITABLE. ' + $json.reason + ' Will re-audit once the executed Service Order is in SpotDraft.', mrkdwn: true }) }}",
-        "options": {}
-      },
-      "id": "11111111-0018-0018-0018-000000000018",
-      "name": "Slack post (no contract)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [720, 360]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://slack.com/api/chat.postMessage",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [
-          { "name": "Authorization", "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}" },
-          { "name": "content-type", "value": "application/json; charset=utf-8" }
-        ] },
-        "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ JSON.stringify({ channel: 'C08JS7N86D6', thread_ts: $('Parse opp name').item.json.thread_ts, text: ':warning: *Booking Audit — ' + $('Parse opp name').item.json.oppName + '* — opportunity not found as Closed Won in Salesforce (or name mismatch). Skipped.', mrkdwn: true }) }}",
-        "options": {}
-      },
-      "id": "11111111-0019-0019-0019-000000000019",
-      "name": "Slack post (opp not found)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-380, 420]
+      "position": [1420, 300],
+      "notesInFlow": true,
+      "notes": "Worker runs the 16-check audit (SpotDraft + Claude + SKILL.md), posts the result in-thread and adds the white_check_mark reaction itself. No Slack node needed downstream."
     }
   ],
   "connections": {
-    "Slack Trigger (closed-won)": { "main": [ [ { "node": "Is rattle close-won post?", "type": "main", "index": 0 } ] ] },
-    "Is rattle close-won post?": { "main": [ [ { "node": "Parse opp name", "type": "main", "index": 0 } ], [] ] },
-    "Parse opp name": { "main": [ [ { "node": "SF Token", "type": "main", "index": 0 } ] ] },
-    "SF Token": { "main": [ [ { "node": "SF Opp", "type": "main", "index": 0 } ] ] },
-    "SF Opp": { "main": [ [ { "node": "Opp found & Closed Won?", "type": "main", "index": 0 } ] ] },
-    "Opp found & Closed Won?": { "main": [ [ { "node": "SF Line Items", "type": "main", "index": 0 } ], [ { "node": "Slack post (opp not found)", "type": "main", "index": 0 } ] ] },
-    "SF Line Items": { "main": [ [ { "node": "SF Contact Roles", "type": "main", "index": 0 } ] ] },
-    "SF Contact Roles": { "main": [ [ { "node": "SF SpotDraft Contracts", "type": "main", "index": 0 } ] ] },
-    "SF SpotDraft Contracts": { "main": [ [ { "node": "Pick executed contract", "type": "main", "index": 0 } ] ] },
-    "Pick executed contract": { "main": [ [ { "node": "Has executed contract?", "type": "main", "index": 0 } ] ] },
-    "Has executed contract?": { "main": [ [ { "node": "SpotDraft key_pointers", "type": "main", "index": 0 } ], [ { "node": "Slack post (no contract)", "type": "main", "index": 0 } ] ] },
-    "SpotDraft key_pointers": { "main": [ [ { "node": "SpotDraft download PDF", "type": "main", "index": 0 } ] ] },
-    "SpotDraft download PDF": { "main": [ [ { "node": "Extract PDF text", "type": "main", "index": 0 } ] ] },
-    "Extract PDF text": { "main": [ [ { "node": "Assemble Claude request", "type": "main", "index": 0 } ] ] },
-    "Assemble Claude request": { "main": [ [ { "node": "Claude audit", "type": "main", "index": 0 } ] ] },
-    "Claude audit": { "main": [ [ { "node": "Slack post audit", "type": "main", "index": 0 } ] ] }
-  }
+    "Slack Trigger #closed-won": { "main": [[{ "node": "IF: Rattle deal alert", "type": "main", "index": 0 }]] },
+    "Slack Trigger #sfdc": { "main": [[{ "node": "IF: Rattle deal alert", "type": "main", "index": 0 }]] },
+    "IF: Rattle deal alert": { "main": [[{ "node": "Parse deal", "type": "main", "index": 0 }], []] },
+    "Parse deal": { "main": [[{ "node": "SF: Opportunity", "type": "main", "index": 0 }]] },
+    "SF: Opportunity": { "main": [[{ "node": "SF: Line Items", "type": "main", "index": 0 }]] },
+    "SF: Line Items": { "main": [[{ "node": "SF: Contracts", "type": "main", "index": 0 }]] },
+    "SF: Contracts": { "main": [[{ "node": "Build worker payload", "type": "main", "index": 0 }]] },
+    "Build worker payload": { "main": [[{ "node": "Call audit worker", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": true }
 }

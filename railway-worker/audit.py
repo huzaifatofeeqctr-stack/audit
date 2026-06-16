@@ -124,6 +124,8 @@ def gather(opp, li_rows=None, contract_rows=None):
                          "Minimum_Spend__c", "CloseDate", "Closed_Won_Reason__c"]},
         "owner": (opp.get("Owner") or {}).get("Name") or opp.get("OwnerName"),
         "account": acct,
+        "opp_id": opp.get("Id"),
+        "account_id": opp.get("AccountId"),
         "line_items": [{k: row.get(k) for k in ["Package_Type__c", "Platform_Fee__c",
                         "Number_Of_Months__c", "UnitPrice"]} | {"Product": _li_product(row)}
                        for row in li],
@@ -155,6 +157,11 @@ def _routing_note(channel_id):
         "FIRST LINE of exactly `CLEAN: yes` or `CLEAN: no` (yes = every applicable check "
         "passed, 0 mismatches and 0 warnings; PRELIMINARY-but-otherwise-clean counts as yes). "
         "That first line will be stripped before posting.\n"
+        "Use the real IDs from the data bundle for links: the Opportunity link is "
+        "`https://postscript.lightning.force.com/lightning/r/Opportunity/<opp_id>/view` and the "
+        "Account link uses `<account_id>` — never leave `<OPP_ID>`/`<ACCOUNT_ID>` placeholders.\n"
+        "Do NOT add an auto-renewal preamble/banner unless this is a TRUE auto-renewal "
+        "(no new SO; audited against a prior-term SO). For freshly signed deals, omit it entirely.\n"
         "Tagging (only when CLEAN: no — clean audits get NO @-mention): "
         f"Renewal/Upsell -> <@{TAG['caitlin']}>; New Business/Winback/Captured Account/Amendment -> <@{TAG['lola']}>; "
         f"add <@{TAG['viv']}> only if the deal has Postscript Plus"
