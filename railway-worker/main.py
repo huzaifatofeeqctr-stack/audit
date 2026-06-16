@@ -20,7 +20,7 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.4.1"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.4.2"  # bump on each deploy to verify GitHub auto-deploy is live
 
 
 @app.get("/health")
@@ -63,9 +63,11 @@ async def do_audit(req: Request):
         return {"ok": True, "clean": clean}
     except Exception as e:
         traceback.print_exc()
-        # surface a short error in-thread so failures aren't silent
-        try:
-            clients.slack_post(channel_id, f":warning: Audit worker error: `{e}`", thread_ts=thread_ts)
-        except Exception:
-            pass
+        # never post during dry_run; for real runs surface a SHORT note in-thread
+        # (never to the channel root) so failures aren't silent but aren't noisy
+        if not dry_run and thread_ts:
+            try:
+                clients.slack_post(channel_id, f":warning: Audit worker error: `{str(e)[:280]}`", thread_ts=thread_ts)
+            except Exception:
+                pass
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
