@@ -50,7 +50,10 @@ def soql(query):
         params={"q": query},
         timeout=60,
     )
-    r.raise_for_status()
+    if not r.ok:
+        # surface the Salesforce error body (e.g. INVALID_FIELD / FLS) instead
+        # of a bare "400 Client Error"
+        raise RuntimeError(f"SF query {r.status_code}: {r.text[:500]} | q={query[:300]}")
     return r.json()["records"]
 
 
