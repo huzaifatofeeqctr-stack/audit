@@ -177,6 +177,14 @@ def _routing_note(channel_id):
         f"add <@{TAG['viv']}> only if the deal has Postscript Plus"
         + (" — but NEVER tag Viv in this channel." if no_viv else ".")
         + (" Never tag Viv here (this is #sfdc-oppty-audit)." if no_viv else "")
+        + "\n\n## Output discipline (critical)\n"
+        "- Output the FINAL message only. NO reasoning, deliberation, self-correction, or "
+        "meta-commentary. Never write words like 'Wait', 'rechecking', 'correcting', 'actually', "
+        "and never emit a second/duplicate Result line. Decide the verdict before writing, write it once.\n"
+        "- The very first line MUST be exactly `CLEAN: yes` or `CLEAN: no` and appear nowhere else.\n"
+        "- The `Result: X of 16 checks passed — N mismatches, M warnings` counts MUST match the table "
+        "exactly: X = count of ✅ rows, N = count of ❌ rows, M = count of ⚠ rows. Count the rows, then write the line.\n"
+        "- If you catch yourself wanting to revise, regenerate silently — never show the revision."
     )
 
 
@@ -227,9 +235,12 @@ def audit_message(alert_text, channel_id, sf=None):
                     "(Closed Won / Stage 5 / Pricing & Negotiations).", False)
     bundle = gather(opp, li_rows, contract_rows)
     out = run_claude(channel_id, bundle)
+    # Robustly read the CLEAN verdict: prefer the first line, but accept it
+    # anywhere (the model sometimes places it mid-message), then strip every
+    # CLEAN line from the text so it never shows in Slack.
     clean = False
-    m = re.match(r"\s*CLEAN:\s*(yes|no)\s*\n", out, re.I)
+    m = re.search(r"CLEAN:\s*(yes|no)", out, re.I)
     if m:
         clean = m.group(1).lower() == "yes"
-        out = out[m.end():].lstrip()
+    out = re.sub(r"(?im)^\s*CLEAN:\s*(?:yes|no)\s*$", "", out).strip()
     return out, clean
