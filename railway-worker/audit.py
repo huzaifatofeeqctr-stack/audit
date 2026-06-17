@@ -200,10 +200,28 @@ def run_claude(channel_id, bundle):
     msg = client.messages.create(
         model=MODEL,
         max_tokens=2000,
+        temperature=0,  # determinism — the model's free-form counting was unreliable
         system=system,
         messages=[{"role": "user", "content": user}],
     )
     return "".join(b.text for b in msg.content if b.type == "text").strip()
+
+
+def _verdict_from_table(out):
+    """Count ❌/⚠/⛔ in the audit TABLE only (not banners/notes), and decide
+    clean deterministically. The model's own header counts and CLEAN line are
+    unreliable, so we derive the verdict from the table it produced.
+
+    Returns (clean: bool, has_table: bool, mismatches, warnings, blocked).
+    """
+    rows = [l for l in out.splitlines() if l.lstrip().startswith("|")]
+    has_table = len(rows) >= 10  # a real 16-check table; else it's a not-auditable/error note
+    body = "\n".join(rows)
+    nmis = body.count("❌")
+    nwarn = body.count("⚠")
+    nblk = body.count("⛔")
+    clean = has_table and nmis == 0 and nwarn == 0 and nblk == 0
+    return clean, has_table, nmis, nwarn, nblk
 
 
 def audit_message(alert_text, channel_id, sf=None):
@@ -235,12 +253,17 @@ def audit_message(alert_text, channel_id, sf=None):
                     "(Closed Won / Stage 5 / Pricing & Negotiations).", False)
     bundle = gather(opp, li_rows, contract_rows)
     out = run_claude(channel_id, bundle)
-    # Robustly read the CLEAN verdict: prefer the first line, but accept it
-    # anywhere (the model sometimes places it mid-message), then strip every
-    # CLEAN line from the text so it never shows in Slack.
-    clean = False
-    m = re.search(r"CLEAN:\s*(yes|no)", out, re.I)
-    if m:
-        clean = m.group(1).lower() == "yes"
+    # Strip any CLEAN: line the model emitted — we derive the verdict ourselves.
     out = re.sub(r"(?im)^\s*CLEAN:\s*(?:yes|no)\s*$", "", out).strip()
+    # Deterministic verdict from the table the model produced (its own header
+    # counts / CLEAN line were unreliable).
+    clean, has_table, nmis, nwarn, nblk = _verdict_from_table(out)
+    if has_table:
+        passed = 16 - nmis - nwarn - nblk
+        mw = f"{nmis} mismatch{'' if nmis == 1 else 'es'}, {nwarn} warning{'' if nwarn == 1 else 's'}"
+        if nblk:
+            mw += f", {nblk} blocked"
+        # rewrite the Result line so the header always matches the table
+        out = re.sub(r"(?im)^\**\s*Result:.*$",
+                     f"**Result: {passed} of 16 checks passed — {mw}**", out, count=1)
     return out, clean
