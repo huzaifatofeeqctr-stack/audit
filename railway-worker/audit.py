@@ -265,4 +265,17 @@ def audit_message(alert_text, channel_id, sf=None):
         # rewrite the Result line so the header always matches the table
         out = re.sub(r"(?im)^\**\s*Result:.*$",
                      f"**Result: {passed} of 16 checks passed — {mw}**", out, count=1)
+
+    # Deterministic tagging — never trust the model here. Strip any @-mentions /
+    # cc lines it emitted, then: clean => no tag; otherwise route by opp Type
+    # (Renewal/Upsell -> Caitlin; else Lola) + Viv if Plus, never Viv in #sfdc.
+    out = re.sub(r"(?im)^\s*cc\b.*$", "", out)
+    out = re.sub(r"<@U[A-Z0-9]+>", "", out).rstrip()
+    if not clean:
+        typ = (opp.get("Type") or "").lower()
+        who = [TAG["caitlin"] if typ in ("renewal", "existing business") else TAG["lola"]]
+        has_plus = any(li.get("Product") == "Postscript Plus" for li in bundle.get("line_items", []))
+        if has_plus and channel_id != SFDC:
+            who.append(TAG["viv"])
+        out = out.rstrip() + "\n\ncc " + " ".join(f"<@{w}>" for w in who)
     return out, clean
