@@ -200,7 +200,6 @@ def run_claude(channel_id, bundle):
     msg = client.messages.create(
         model=MODEL,
         max_tokens=2000,
-        temperature=0,  # determinism — the model's free-form counting was unreliable
         system=system,
         messages=[{"role": "user", "content": user}],
     )
