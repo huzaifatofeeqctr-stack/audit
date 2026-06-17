@@ -177,6 +177,14 @@ def _routing_note(channel_id):
         f"add <@{TAG['viv']}> only if the deal has Postscript Plus"
         + (" — but NEVER tag Viv in this channel." if no_viv else ".")
         + (" Never tag Viv here (this is #sfdc-oppty-audit)." if no_viv else "")
+        + "\n\n## Evidence rule (critical)\n"
+        "Product inclusion (DSC check 9, Plus check 11, AI check 15) is determined ONLY by "
+        "(a) an actual addendum SECTION present in the contract PDF text, AND (b) the matching "
+        "SFDC line item. The contract `key_pointers` often contain unpopulated PLACEHOLDER/template "
+        "fields — e.g. `AIPlatformFeePrice` ($699), `AIShops`, `Shopper`, `Infinity Testing` — that "
+        "are NOT evidence a product was sold. IGNORE them. Never raise a ⚠ or ❌ merely because a "
+        "key-pointer is populated. If the PDF has no such addendum and there is no SFDC line item, "
+        "the check is ✅ (both correctly absent), not a warning."
         + "\n\n## Output discipline (critical)\n"
         "- Output the FINAL message only. NO reasoning, deliberation, self-correction, or "
         "meta-commentary. Never write words like 'Wait', 'rechecking', 'correcting', 'actually', "
