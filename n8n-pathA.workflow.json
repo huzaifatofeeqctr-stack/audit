@@ -83,6 +83,9 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [4320, 1440],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "notesInFlow": true,
       "notes": "Path A: worker queries Salesforce itself (as Spotdraft Bot), runs the 16-check audit (SpotDraft + Claude + SKILL.md), posts in-thread, and adds the white_check_mark reaction. Needs Spotdraft Bot to have View All on Opportunity + SpotDraft_Contract__c so every record is visible."
     }
