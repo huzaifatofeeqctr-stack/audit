@@ -1,0 +1,98 @@
+{
+  "name": "Closed-Won Contract Audit (Path A — worker self-queries SF)",
+  "nodes": [
+    {
+      "parameters": {
+        "trigger": ["message"],
+        "channelId": { "__rl": true, "value": "C08JS7N86D6", "mode": "id" },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [3488, 1312],
+      "id": "568f8662-510d-49a8-8819-9a9f8a9d93da",
+      "name": "Slack Trigger #closed-won",
+      "webhookId": "a872a93b-5590-485f-988c-4a464fe6769a",
+      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } }
+    },
+    {
+      "parameters": {
+        "trigger": ["message"],
+        "channelId": { "__rl": true, "value": "C0B88KMFJ3E", "mode": "id" },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.slackTrigger",
+      "typeVersion": 1,
+      "position": [3488, 1632],
+      "id": "1d2c2d8c-75d7-4b71-9e70-28278cdb69b9",
+      "name": "Slack Trigger #sfdc",
+      "webhookId": "b9c1f2e3-1111-4444-9999-aaaaaaaaaaaa",
+      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "c-rattle",
+              "leftValue": "={{ $json.user || $json.bot_id || '' }}",
+              "rightValue": "U05AA8MBV9B",
+              "operator": { "type": "string", "operation": "equals" }
+            },
+            {
+              "id": "c-name",
+              "leftValue": "={{ $json.text || '' }}",
+              "rightValue": "*Name:*",
+              "operator": { "type": "string", "operation": "contains" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "943458d4-dcfa-4891-aa82-ed6d44d49114",
+      "name": "IF: Rattle deal alert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [3824, 1456],
+      "notesInFlow": true,
+      "notes": "Only Rattle (U05AA8MBV9B) deal alerts with a *Name:* line pass. Audit replies / edits / deletes are dropped."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the Rattle alert -> opp name (for reference), channel, thread ts, raw text.\nconst m = $input.item.json;\nconst text = m.text || '';\nconst nameMatch = text.match(/\\*Name:\\*\\s*(.+)/);\nif (!nameMatch) { throw new Error('No *Name:* line found in Rattle message.'); }\nlet name = nameMatch[1].trim().replace(/^<https?:[^|]+\\|/, '').replace(/>$/, '').trim();\nreturn {\n  opp_name: name,\n  channel_id: m.channel,\n  thread_ts: m.thread_ts || m.ts,\n  text: text\n};\n"
+      },
+      "id": "cc2e6892-af94-4c51-9236-8d747cef3878",
+      "name": "Parse deal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [4064, 1440]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://audit-production-54bd.up.railway.app/audit",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ channel_id: $json.channel_id, thread_ts: $json.thread_ts, text: $json.text }) }}",
+        "options": { "timeout": 240000 }
+      },
+      "id": "2e46a488-1850-4d1c-83a5-839bd9765f3b",
+      "name": "Call audit worker",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [4320, 1440],
+      "notesInFlow": true,
+      "notes": "Path A: worker queries Salesforce itself (as Spotdraft Bot), runs the 16-check audit (SpotDraft + Claude + SKILL.md), posts in-thread, and adds the white_check_mark reaction. Needs Spotdraft Bot to have View All on Opportunity + SpotDraft_Contract__c so every record is visible."
+    }
+  ],
+  "connections": {
+    "Slack Trigger #closed-won": { "main": [[{ "node": "IF: Rattle deal alert", "type": "main", "index": 0 }]] },
+    "Slack Trigger #sfdc": { "main": [[{ "node": "IF: Rattle deal alert", "type": "main", "index": 0 }]] },
+    "IF: Rattle deal alert": { "main": [[{ "node": "Parse deal", "type": "main", "index": 0 }]] },
+    "Parse deal": { "main": [[{ "node": "Call audit worker", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": true }
+}
