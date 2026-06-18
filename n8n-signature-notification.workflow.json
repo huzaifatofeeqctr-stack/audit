@@ -1,0 +1,74 @@
+{
+  "name": "SpotDraft — Contract Sent for Signature notifier",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "minutes", "minutesInterval": 10 } ] }
+      },
+      "id": "sched-1",
+      "name": "Every 10 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://postscript.my.salesforce.com/services/data/v59.0/query",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "salesforceOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "SELECT Id, Name, SpotDraft_ID__c, Status__c, Account__r.Name, Opportunity__r.Name, Contract_Link__c, LastModifiedDate FROM SpotDraft_Contract__c WHERE Status__c IN ('Signing','Awaiting Signature') AND LastModifiedDate = LAST_N_DAYS:1 ORDER BY LastModifiedDate DESC"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Accept", "value": "application/json" } ] },
+        "options": {}
+      },
+      "id": "sf-signing",
+      "name": "SF: signature-stage contracts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300],
+      "credentials": { "salesforceOAuth2Api": { "id": "l3bCE3Vt1roEqml5", "name": "Salesforce account" } },
+      "notes": "Pulls SpotDraft contracts currently in Signing / Awaiting Signature that changed in the last day. The Code node dedups so each contract notifies only once."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Notify once per contract that entered a signature stage.\n// Dedup by contract Id in workflow static data (survives runs).\nconst sd = $getWorkflowStaticData('global');\nsd.notified = sd.notified || [];\nconst seen = new Set(sd.notified);\n\nconst res = $input.first() ? $input.first().json : {};\nconst records = (res && res.records) ? res.records : [];\n\nconst out = [];\nfor (const r of records) {\n  if (!r || !r.Id) continue;\n  if (seen.has(r.Id)) continue;            // already notified this contract\n  seen.add(r.Id);\n  const acct = (r.Account__r && r.Account__r.Name) ? r.Account__r.Name : '(unknown account)';\n  const opp  = (r.Opportunity__r && r.Opportunity__r.Name) ? r.Opportunity__r.Name : '—';\n  const tid  = r.SpotDraft_ID__c || '(no T-id)';\n  const link = r.Contract_Link__c || '';\n  const text =\n    `:pencil: *Contract sent for signature* — *${acct}*\\n` +\n    `> *Status:* ${r.Status__c}\\n` +\n    `> *Contract:* ${tid}` + (link ? ` (<${link}|open in SpotDraft>)` : '') + `\\n` +\n    `> *Opportunity:* ${opp}`;\n  out.push({ json: { channel: 'C0B88KMFJ3E', text } });\n}\n\n// keep the dedup list bounded\nsd.notified = Array.from(seen).slice(-5000);\nreturn out;\n"
+      },
+      "id": "dedup-format",
+      "name": "Dedup + format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": { "__rl": true, "value": "C0B88KMFJ3E", "mode": "id" },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "post-slack",
+      "name": "Post to #sfdc-oppty-audit",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [1180, 300],
+      "webhookId": "signotify-0001",
+      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } },
+      "notes": "One message per newly-signature contract. The bot must be a member of #sfdc-oppty-audit with chat:write."
+    }
+  ],
+  "connections": {
+    "Every 10 min": { "main": [[{ "node": "SF: signature-stage contracts", "type": "main", "index": 0 }]] },
+    "SF: signature-stage contracts": { "main": [[{ "node": "Dedup + format", "type": "main", "index": 0 }]] },
+    "Dedup + format": { "main": [[{ "node": "Post to #sfdc-oppty-audit", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": true }
+}
