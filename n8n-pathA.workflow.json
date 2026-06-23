@@ -1,33 +1,21 @@
 {
-  "name": "Closed-Won Contract Audit (Path A — worker self-queries SF)",
+  "name": "Closed-Won Contract Audit (Path A — single Slack endpoint)",
   "nodes": [
     {
       "parameters": {
         "trigger": ["message"],
-        "channelId": { "__rl": true, "value": "C08JS7N86D6", "mode": "id" },
+        "watchWorkspace": true,
         "options": {}
       },
       "type": "n8n-nodes-base.slackTrigger",
       "typeVersion": 1,
-      "position": [3488, 1312],
+      "position": [3488, 1456],
       "id": "568f8662-510d-49a8-8819-9a9f8a9d93da",
-      "name": "Slack Trigger #closed-won",
+      "name": "Slack Trigger (whole workspace)",
       "webhookId": "a872a93b-5590-485f-988c-4a464fe6769a",
-      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } }
-    },
-    {
-      "parameters": {
-        "trigger": ["message"],
-        "channelId": { "__rl": true, "value": "C0B88KMFJ3E", "mode": "id" },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.slackTrigger",
-      "typeVersion": 1,
-      "position": [3488, 1632],
-      "id": "1d2c2d8c-75d7-4b71-9e70-28278cdb69b9",
-      "name": "Slack Trigger #sfdc",
-      "webhookId": "b9c1f2e3-1111-4444-9999-aaaaaaaaaaaa",
-      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } }
+      "credentials": { "slackApi": { "id": "CpUNfLzu6cz2MpDd", "name": "Audit Bot" } },
+      "notesInFlow": true,
+      "notes": "SINGLE endpoint — its URL is the Slack app's one Events request_url (.../webhook/a872a93b-.../webhook). Must watch the WHOLE workspace (not one channel), because Slack delivers message.channels for BOTH #closed-won and #sfdc to this one URL; a channel-scoped trigger would drop the other channel. The IF node filters down to the two channels."
     },
     {
       "parameters": {
@@ -41,8 +29,14 @@
               "operator": { "type": "string", "operation": "equals" }
             },
             {
+              "id": "c-channel",
+              "leftValue": "={{ ['C08JS7N86D6','C0B88KMFJ3E'].includes($json.channel) }}",
+              "rightValue": "",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            },
+            {
               "id": "c-name",
-              "leftValue": "={{ $json.text || '' }}",
+              "leftValue": "={{ JSON.stringify($json) }}",
               "rightValue": "*Name:*",
               "operator": { "type": "string", "operation": "contains" }
             }
@@ -52,22 +46,22 @@
         "options": {}
       },
       "id": "943458d4-dcfa-4891-aa82-ed6d44d49114",
-      "name": "IF: Rattle deal alert",
+      "name": "IF: Rattle deal alert (either channel)",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [3824, 1456],
+      "position": [3784, 1456],
       "notesInFlow": true,
-      "notes": "Only Rattle (U05AA8MBV9B) deal alerts with a *Name:* line pass. Audit replies / edits / deletes are dropped."
+      "notes": "Pass only: sender = Rattle (U05AA8MBV9B) AND channel ∈ {#closed-won C08JS7N86D6, #sfdc C0B88KMFJ3E} AND a *Name:* line exists. *Name:* is matched against the whole payload (JSON.stringify) because the deal fields live in message BLOCKS, not top-level text."
     },
     {
       "parameters": {
-        "jsCode": "// Parse the Rattle alert -> opp name (for reference), channel, thread ts, raw text.\nconst m = $input.item.json;\nconst text = m.text || '';\nconst nameMatch = text.match(/\\*Name:\\*\\s*(.+)/);\nif (!nameMatch) { throw new Error('No *Name:* line found in Rattle message.'); }\nlet name = nameMatch[1].trim().replace(/^<https?:[^|]+\\|/, '').replace(/>$/, '').trim();\nreturn {\n  opp_name: name,\n  channel_id: m.channel,\n  thread_ts: m.thread_ts || m.ts,\n  text: text\n};\n"
+        "jsCode": "// Parse Rattle deal alerts. Deal fields live in the message BLOCKS (and\n// attachments), not the top-level text — gather everything, decode HTML\n// entities, then find the *Name:* line. Returns the worker payload.\nfunction collect(node, acc) {\n  if (node == null) return;\n  if (Array.isArray(node)) { node.forEach(n => collect(n, acc)); return; }\n  if (typeof node === 'object') {\n    if (typeof node.text === 'string') acc.push(node.text);\n    else if (node.text && typeof node.text.text === 'string') acc.push(node.text.text);\n    collect(node.blocks, acc);\n    collect(node.elements, acc);\n    collect(node.attachments, acc);\n    collect(node.fields, acc);\n  }\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  const m = item.json;\n  const parts = [];\n  if (typeof m.text === 'string') parts.push(m.text);\n  collect(m.blocks, parts);\n  collect(m.attachments, parts);\n  const text = parts.join('\\n')\n    .replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');\n  const nameMatch = text.match(/\\*Name:\\*\\s*(.+)/);\n  if (!nameMatch) continue; // not a deal alert -> skip quietly\n  out.push({ json: {\n    channel_id: m.channel,\n    thread_ts: m.thread_ts || m.ts,\n    text,\n  }});\n}\nreturn out;\n"
       },
       "id": "cc2e6892-af94-4c51-9236-8d747cef3878",
       "name": "Parse deal",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [4064, 1440]
+      "position": [4024, 1456]
     },
     {
       "parameters": {
@@ -82,18 +76,17 @@
       "name": "Call audit worker",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [4320, 1440],
+      "position": [4284, 1456],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
       "notesInFlow": true,
-      "notes": "Path A: worker queries Salesforce itself (as Spotdraft Bot), runs the 16-check audit (SpotDraft + Claude + SKILL.md), posts in-thread, and adds the white_check_mark reaction. Needs Spotdraft Bot to have View All on Opportunity + SpotDraft_Contract__c so every record is visible."
+      "notes": "Path A: worker queries Salesforce itself (Spotdraft Bot needs View All on Opportunity + SpotDraft_Contract__c), runs the 16-check audit, posts in-thread + ✅ on clean. Worker reads channel_id from the event, so one pipeline serves both channels."
     }
   ],
   "connections": {
-    "Slack Trigger #closed-won": { "main": [[{ "node": "IF: Rattle deal alert", "type": "main", "index": 0 }]] },
-    "Slack Trigger #sfdc": { "main": [[{ "node": "IF: Rattle deal alert", "type": "main", "index": 0 }]] },
-    "IF: Rattle deal alert": { "main": [[{ "node": "Parse deal", "type": "main", "index": 0 }]] },
+    "Slack Trigger (whole workspace)": { "main": [[{ "node": "IF: Rattle deal alert (either channel)", "type": "main", "index": 0 }]] },
+    "IF: Rattle deal alert (either channel)": { "main": [[{ "node": "Parse deal", "type": "main", "index": 0 }]] },
     "Parse deal": { "main": [[{ "node": "Call audit worker", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1" },
