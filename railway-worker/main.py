@@ -20,7 +20,7 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.5.2"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.5.3"  # bump on each deploy to verify GitHub auto-deploy is live
 
 
 @app.get("/health")

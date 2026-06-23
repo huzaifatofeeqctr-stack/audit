@@ -231,6 +231,49 @@ def _verdict_from_table(out):
     return clean, has_table, nmis, nwarn, nblk
 
 
+def _to_slack(md):
+    """Convert the model's GitHub-Markdown into Slack mrkdwn that actually
+    renders: headings/bold -> *bold*, [t](u) -> <u|t>, bullets -> •, and the
+    pipe table -> an aligned monospace code block (Slack has no Markdown tables)."""
+    out, tbl = [], []
+
+    def flush_table():
+        if not tbl:
+            return
+        rows = []
+        for r in tbl:
+            cells = [c.strip() for c in r.strip().strip("|").split("|")]
+            # drop the |---|---| separator row
+            if cells and all(c and set(c) <= set("-: ") for c in cells):
+                continue
+            rows.append(cells)
+        tbl.clear()
+        if not rows:
+            return
+        ncol = max(len(r) for r in rows)
+        rows = [r + [""] * (ncol - len(r)) for r in rows]
+        w = [max(len(r[c]) for r in rows) for c in range(ncol)]
+        body = []
+        for r in rows:
+            # pad every column except the last (last holds emoji of varying width)
+            cells = [r[c].ljust(w[c]) for c in range(ncol - 1)] + [r[ncol - 1]]
+            body.append("  ".join(cells).rstrip())
+        out.append("```\n" + "\n".join(body) + "\n```")
+
+    for ln in md.split("\n"):
+        if ln.lstrip().startswith("|"):
+            tbl.append(ln)
+            continue
+        flush_table()
+        s = re.sub(r"^\s*#{1,6}\s*(.*)$", r"*\1*", ln)          # headings -> bold
+        s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", s)  # links
+        s = s.replace("**", "*")                                  # bold
+        s = re.sub(r"^\s*[-*]\s+", "• ", s)                       # bullets
+        out.append(s)
+    flush_table()
+    return "\n".join(out).strip()
+
+
 def audit_message(alert_text, channel_id, sf=None):
     """Returns (slack_text, clean: bool) or raises.
 
@@ -286,4 +329,6 @@ def audit_message(alert_text, channel_id, sf=None):
         if has_plus and channel_id != SFDC:
             who.append(TAG["viv"])
         out = out.rstrip() + "\n\ncc " + " ".join(f"<@{w}>" for w in who)
+    # Final step: render to Slack-native mrkdwn (table -> monospace code block).
+    out = _to_slack(out)
     return out, clean
