@@ -156,6 +156,15 @@ Field gotchas learned from the live org — trust these over labels:
 Run all of these. A blank/null Salesforce value where the contract has a
 value is a **mismatch** (report as "missing in SFDC"), not a skip.
 
+**Monetary tolerance (±$5).** For every check that compares a **dollar amount**
+— SMS Platform Fee (7), Minimum Commitment (8), DSC fee (10), Plus fee (14),
+AI Platform Fee (16) — treat the values as a **✅ Match when they are within
+$5 of each other** (`|contract − SFDC| ≤ $5`). Only a gap **greater than $5**
+is a ❌ Mismatch. A cent-level or few-dollar rounding difference is not worth
+flagging. (If you want, append "(within $5)" to the cell, but it still counts
+as ✅, not a warning.) This tolerance applies to money only — dates, packages,
+shop IDs, and product inclusion remain exact.
+
 | # | Check | Contract value | Salesforce value | Pass when |
 |---|---|---|---|---|
 | 1 | Shop ID | Shop ID(s) from "Shop(s)" row | Opportunity `Shop_ID__c` | Every contract Shop ID appears (exact string match per ID). **New Business exception:** if the contract has no usable Shop ID (name-only row or a "(0)" placeholder) and the Opportunity `Type` is "New Business", mark ➖ N/A. For any other Type, a missing/unverifiable Shop ID is still a ⚠. **Multi-shop:** when a multi-shop SO is split into per-shop opportunities, the opp matches on its own `Shop_ID__c`; note the other shops are covered under their own opps/allocations rather than hard-failing the missing IDs |
@@ -164,16 +173,16 @@ value is a **mismatch** (report as "missing in SFDC"), not a skip.
 | 4 | Opt-out flag | Service Order-level termination-for-convenience clause exists (any heading)? | Opportunity `Opt_Out__c` | Language present → `true`; absent → `false` |
 | 5 | Opt-out date | Effective date of the termination right | Opportunity `Opt_Out_Date__c` | Exact date match (N/A if no opt-out language and flag is correctly false) |
 | 6 | Package type | SMS Addendum Package | SMS Marketing line item `Package_Type__c` | Exact picklist match |
-| 7 | SMS Platform Fee | SMS Addendum Platform Fee, **waiver-adjusted** | SMS Marketing line item `Platform_Fee__c` | Amounts equal. **Waiver rule:** if waived, expected SF value is $0. **For this check only, blank/null `Platform_Fee__c` counts as $0** — blank = ✅ when contract fee is waived or $0 |
-| 8 | Minimum Commitment | Minimum Commitment **converted to monthly** (quarterly ÷ 3). **Multi-shop allocation:** if the SMS Addendum has a *Minimum Commitment Allocation* clause splitting the total across Shop IDs (e.g. `Woolx: $22,500.00; Hanks Leather Goods (73146): $22,500.00`), use the amount allocated to **this opp's `Shop_ID__c`** (the shop the opportunity represents), converted to monthly — NOT the aggregate total | Opportunity `Minimum_Spend__c` | Amounts equal (show the allocation + the ÷3 math) |
+| 7 | SMS Platform Fee | SMS Addendum Platform Fee, **waiver-adjusted** | SMS Marketing line item `Platform_Fee__c` | Amounts within $5 (±$5 tolerance). **Waiver rule:** if waived, expected SF value is $0. **For this check only, blank/null `Platform_Fee__c` counts as $0** — blank = ✅ when contract fee is waived or $0 |
+| 8 | Minimum Commitment | Minimum Commitment **converted to monthly** (quarterly ÷ 3). **Multi-shop allocation:** if the SMS Addendum has a *Minimum Commitment Allocation* clause splitting the total across Shop IDs (e.g. `Woolx: $22,500.00; Hanks Leather Goods (73146): $22,500.00`), use the amount allocated to **this opp's `Shop_ID__c`** (the shop the opportunity represents), converted to monthly — NOT the aggregate total | Opportunity `Minimum_Spend__c` | Amounts within $5 (±$5 tolerance) (show the allocation + the ÷3 math) |
 | 9 | DSC included | SMS Addendum has a Dedicated Short Code section with DSC fee? | "Dedicated Short Code" line item exists | Both present or both absent |
-| 10 | DSC monthly fee | DSC fee, **waiver-adjusted** (waived → $0) | DSC line item `Platform_Fee__c` | Amounts equal. **Blank/null counts as $0** — blank = ✅ when waived or $0 (blank against a real discounted fee like $200 is still a mismatch) |
+| 10 | DSC monthly fee | DSC fee, **waiver-adjusted** (waived → $0) | DSC line item `Platform_Fee__c` | Amounts within $5 (±$5 tolerance). **Blank/null counts as $0** — blank = ✅ when waived or $0 (blank against a real discounted fee like $200 is still a mismatch) |
 | 11 | Plus included | Postscript Plus Addendum present? | "Postscript Plus" line item exists | Both present or both absent |
 | 12 | Plus service dates | Plus Addendum Start/End Dates | Window from Plus line item `Number_Of_Months__c`: start = Service Order Start Date, end = start + N months − 1 day | Derived window equals Plus Addendum dates. **Mid-month tolerance:** within 1 day = ✅ (note it); gap >1 day is a real mismatch |
 | 13 | Plus package | Plus Addendum package tier (e.g. "Plus Launch" → "Launch") | Plus line item `Package_Type__c` | Tier matches |
-| 14 | Plus monthly fee | Plus Addendum Fees ($/mo per Shop) | Plus line item `Platform_Fee__c` | Amounts equal |
+| 14 | Plus monthly fee | Plus Addendum Fees ($/mo per Shop) | Plus line item `Platform_Fee__c` | Amounts within $5 (±$5 tolerance) |
 | 15 | AI included | Postscript AI Addendum present? | "Postscript AI" line item exists | Both present or both absent |
-| 16 | AI Platform Fee | AI Addendum "AI Platform Fee Price" ($/mo per Shop) | AI line item `Platform_Fee__c` — **ignore `Calculated_Rate__c` and `UnitPrice`** | Amounts equal |
+| 16 | AI Platform Fee | AI Addendum "AI Platform Fee Price" ($/mo per Shop) | AI line item `Platform_Fee__c` — **ignore `Calculated_Rate__c` and `UnitPrice`** | Amounts within $5 (±$5 tolerance) |
 
 Conditional checks (5, 10, 12–14, 16) become **N/A — not in contract** when
 the underlying addendum/section is absent, as long as the corresponding
