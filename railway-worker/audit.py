@@ -120,12 +120,19 @@ def _li_product(li):
     return li.get("Product") or li.get("Product2.Name")
 
 
-def gather(opp, li_rows=None, contract_rows=None):
+def gather(opp, li_rows=None, contract_rows=None, force_tid=None):
     """Build the data bundle. li_rows / contract_rows let a caller (n8n) inject
-    pre-fetched Salesforce data so the worker doesn't query SF itself."""
+    pre-fetched Salesforce data so the worker doesn't query SF itself.
+    force_tid pins the chosen contract to a specific SpotDraft T-id (used by the
+    signature-notifier path, where we must audit the SO that just went to
+    Signing — not whatever pick_contract's newest-Completed heuristic returns)."""
     acct = (opp.get("Account") or {}).get("Name") or opp.get("AccountName")
     contracts = contract_rows if contract_rows is not None else account_contracts(opp["AccountId"])
-    chosen = pick_contract(contracts)
+    if force_tid:
+        chosen = next((c for c in contracts if c.get("SpotDraft_ID__c") == force_tid), None) \
+            or {"SpotDraft_ID__c": force_tid, "Status__c": "Signing"}
+    else:
+        chosen = pick_contract(contracts)
     li = li_rows if li_rows is not None else line_items(opp["Id"])
     bundle = {
         "opportunity": {k: opp.get(k) for k in
@@ -274,7 +281,7 @@ def _to_slack(md):
     return "\n".join(out).strip()
 
 
-def audit_message(alert_text, channel_id, sf=None):
+def audit_message(alert_text, channel_id, sf=None, contract_tid=None):
     """Returns (slack_text, clean: bool) or raises.
 
     sf (optional): pre-fetched Salesforce data from n8n, shaped
@@ -301,7 +308,7 @@ def audit_message(alert_text, channel_id, sf=None):
         if not opp:
             return (f"Could not find an auditable Opportunity named *{name}* "
                     "(Closed Won / Stage 5 / Pricing & Negotiations).", False)
-    bundle = gather(opp, li_rows, contract_rows)
+    bundle = gather(opp, li_rows, contract_rows, force_tid=contract_tid)
     out = run_claude(channel_id, bundle)
     # Strip any CLEAN: line the model emitted — we derive the verdict ourselves.
     out = re.sub(r"(?im)^\s*CLEAN:\s*(?:yes|no)\s*$", "", out).strip()
