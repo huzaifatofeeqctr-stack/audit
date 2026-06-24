@@ -178,3 +178,29 @@ def slack_thread_has_bot_reply(channel_id, thread_ts, bot_user_id):
     if not j.get("ok"):
         return False
     return any(m.get("user") == bot_user_id for m in j.get("messages", [])[1:])
+
+
+def slack_history(channel_id, limit=25):
+    """Recent messages in a channel (newest first). Needs channels:history."""
+    r = requests.get(
+        f"{SLACK_API}/conversations.history",
+        headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
+        params={"channel": channel_id, "limit": limit},
+        timeout=30,
+    )
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(f"slack conversations.history failed: {j.get('error')}")
+    return j.get("messages", [])
+
+
+def slack_thread_replies(channel_id, thread_ts):
+    """All replies (incl. parent) for a thread."""
+    r = requests.get(
+        f"{SLACK_API}/conversations.replies",
+        headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
+        params={"channel": channel_id, "ts": thread_ts, "limit": 50},
+        timeout=30,
+    )
+    j = r.json()
+    return j.get("messages", []) if j.get("ok") else []
