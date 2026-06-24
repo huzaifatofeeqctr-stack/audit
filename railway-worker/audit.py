@@ -185,119 +185,180 @@ def gather(opp, li_rows=None, contract_rows=None, force_tid=None):
 
 
 # ------------------------------------------------------------------- Claude
-def _routing_note(channel_id):
-    no_viv = channel_id == SFDC
-    return (
-        "\n\n## Slack output instructions (apply on top of SKILL.md)\n"
-        "Return ONLY the Slack message to post, as GitHub-flavored markdown, with a "
-        "FIRST LINE of exactly `CLEAN: yes` or `CLEAN: no` (yes = every applicable check "
-        "passed, 0 mismatches and 0 warnings; PRELIMINARY-but-otherwise-clean counts as yes). "
-        "That first line will be stripped before posting.\n"
-        "Use the real IDs from the data bundle for links: the Opportunity link is "
-        "`https://postscript.lightning.force.com/lightning/r/Opportunity/<opp_id>/view` and the "
-        "Account link uses `<account_id>` — never leave `<OPP_ID>`/`<ACCOUNT_ID>` placeholders.\n"
-        "Do NOT add an auto-renewal preamble/banner unless this is a TRUE auto-renewal "
-        "(no new SO; audited against a prior-term SO). For freshly signed deals, omit it entirely.\n"
-        "Tagging (only when CLEAN: no — clean audits get NO @-mention): "
-        f"Renewal/Upsell -> <@{TAG['caitlin']}>; New Business/Winback/Captured Account/Amendment -> <@{TAG['lola']}>; "
-        f"add <@{TAG['viv']}> only if the deal has Postscript Plus"
-        + (" — but NEVER tag Viv in this channel." if no_viv else ".")
-        + (" Never tag Viv here (this is #sfdc-oppty-audit)." if no_viv else "")
-        + "\n\n## Evidence rule (critical)\n"
-        "Product inclusion (DSC check 9, Plus check 11, AI check 15) is determined ONLY by "
-        "(a) an actual addendum SECTION present in the contract PDF text, AND (b) the matching "
-        "SFDC line item. The contract `key_pointers` often contain unpopulated PLACEHOLDER/template "
-        "fields — e.g. `AIPlatformFeePrice` ($699), `AIShops`, `Shopper`, `Infinity Testing` — that "
-        "are NOT evidence a product was sold. IGNORE them. Never raise a ⚠ or ❌ merely because a "
-        "key-pointer is populated. If the PDF has no such addendum and there is no SFDC line item, "
-        "the check is ✅ (both correctly absent), not a warning."
-        + "\n\n## Output discipline (critical)\n"
-        "- Output the FINAL message only. NO reasoning, deliberation, self-correction, or "
-        "meta-commentary. Never write words like 'Wait', 'rechecking', 'correcting', 'actually', "
-        "and never emit a second/duplicate Result line. Decide the verdict before writing, write it once.\n"
-        "- The very first line MUST be exactly `CLEAN: yes` or `CLEAN: no` and appear nowhere else.\n"
-        "- The `Result: X of 16 checks passed — N mismatches, M warnings` counts MUST match the table "
-        "exactly: X = count of ✅ rows, N = count of ❌ rows, M = count of ⚠ rows. Count the rows, then write the line.\n"
-        "- If you catch yourself wanting to revise, regenerate silently — never show the revision."
-    )
+AUDIT_TOOL = {
+    "name": "submit_audit",
+    "description": (
+        "Return the completed 16-check audit as structured data. The worker "
+        "renders the Slack message and computes the verdict from this — output "
+        "data only, never prose, and never a second/revised submission."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "preliminary": {
+                "type": "boolean",
+                "description": "true iff the audited contract is in a signature stage "
+                               "(SIGN / Signing / Awaiting Signature), not yet executed.",
+            },
+            "contract_label": {
+                "type": "string",
+                "description": "How to name the contract, e.g. "
+                               "'Postscript Service Order (T-460362)'.",
+            },
+            "checks": {
+                "type": "array",
+                "description": "All 16 checks, in order 1..16. Include every check.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "n": {"type": "integer"},
+                        "name": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["match", "mismatch", "missing_sfdc",
+                                     "warning", "na", "blocked"],
+                        },
+                        "fix": {
+                            "type": "string",
+                            "description": "Required when status is mismatch / missing_sfdc / "
+                                           "warning: a terse one-line correction naming the exact "
+                                           "Salesforce field or line item and its corrected value, "
+                                           "e.g. 'Postscript AI `Platform_Fee__c`: $599 → $199' or "
+                                           "'`Minimum_Spend__c`: $6,333.33 → $5,000'. Show a "
+                                           "converted value only when needed (qtr ÷ 3, waiver → $0). "
+                                           "No explanatory sentences. Empty for match / na.",
+                        },
+                    },
+                    "required": ["n", "name", "status"],
+                },
+            },
+            "note": {
+                "type": "string",
+                "description": "At most ONE short sentence of essential context (e.g. a waiver "
+                               "window, or a multi-shop per-shop allocation). Usually empty.",
+            },
+        },
+        "required": ["preliminary", "checks"],
+    },
+}
+
+_AUDIT_INSTRUCTIONS = (
+    "\n\n## How to return the audit\n"
+    "Evaluate ALL 16 checks against the data bundle, then call the `submit_audit` tool "
+    "ONCE with the result. Do not write any prose, reasoning, or a Slack message — the "
+    "worker renders everything from your structured submission.\n"
+    "- Populate every one of the 16 checks with its status. Never drop a check.\n"
+    "- For EACH check whose status is `mismatch`, `missing_sfdc`, or an actionable `warning`, "
+    "supply a terse `fix` (the worker turns these into the 'Updates Required' bullets). Every "
+    "discrepancy on the deal must have its own fix — never report only the first/largest.\n"
+    "- `preliminary` is true iff the chosen contract is in a signature stage (SIGN).\n"
+    "## Evidence rule (critical)\n"
+    "Product inclusion (DSC check 9, Plus check 11, AI check 15) is determined ONLY by "
+    "(a) an actual addendum SECTION present in the contract PDF text AND (b) the matching SFDC "
+    "line item. The `key_pointers` often contain unpopulated PLACEHOLDER/template fields — e.g. "
+    "`AIPlatformFeePrice` ($699), `AIShops`, `Shopper`, `Infinity Testing` — that are NOT evidence "
+    "a product was sold. IGNORE them. If the PDF has no such addendum and there is no SFDC line "
+    "item, the check is `match` (both correctly absent), not a warning."
+)
 
 
-def run_claude(channel_id, bundle):
+def run_audit(bundle):
+    """Run the audit and return the model's structured result (dict) via a forced
+    tool call. Structured output (vs free-form text) makes the verdict and the
+    Slack rendering deterministic — the model can't leak self-correction prose,
+    emit a duplicate table, or undercount a mismatch."""
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    system = load_skill() + _routing_note(channel_id)
+    system = load_skill() + _AUDIT_INSTRUCTIONS
     user = (
         "Audit this Closed Won / Stage-5 opportunity against its SpotDraft contract, "
-        "following the skill exactly. Data bundle (Salesforce opportunity, line items, "
-        "SpotDraft contract list, and the chosen contract's key_pointers + extracted PDF "
-        "text) follows as JSON:\n\n```json\n" + json.dumps(bundle, indent=1, default=str) + "\n```"
+        "following the skill exactly, then call submit_audit. Data bundle (Salesforce "
+        "opportunity, line items, SpotDraft contract list, and the chosen contract's "
+        "key_pointers + extracted PDF text) follows as JSON:\n\n```json\n"
+        + json.dumps(bundle, indent=1, default=str) + "\n```"
     )
     msg = client.messages.create(
         model=MODEL,
-        max_tokens=2000,
+        max_tokens=3000,
         system=system,
+        tools=[AUDIT_TOOL],
+        tool_choice={"type": "tool", "name": "submit_audit"},
         messages=[{"role": "user", "content": user}],
     )
-    return "".join(b.text for b in msg.content if b.type == "text").strip()
+    for b in msg.content:
+        if b.type == "tool_use" and b.name == "submit_audit":
+            return b.input
+    raise RuntimeError("model did not return a submit_audit tool call")
 
 
-def _verdict_from_table(out):
-    """Count ❌/⚠/⛔ in the audit TABLE only (not banners/notes), and decide
-    clean deterministically. The model's own header counts and CLEAN line are
-    unreliable, so we derive the verdict from the table it produced.
-
-    Returns (clean: bool, has_table: bool, mismatches, warnings, blocked).
-    """
-    rows = [l for l in out.splitlines() if l.lstrip().startswith("|")]
-    has_table = len(rows) >= 10  # a real 16-check table; else it's a not-auditable/error note
-    body = "\n".join(rows)
-    nmis = body.count("❌")
-    nwarn = body.count("⚠")
-    nblk = body.count("⛔")
-    clean = has_table and nmis == 0 and nwarn == 0 and nblk == 0
-    return clean, has_table, nmis, nwarn, nblk
+def _spotdraft_url(tid):
+    m = re.search(r"(\d+)", tid or "")
+    return f"https://app.spotdraft.com/contracts/v2/{m.group(1)}" if m else None
 
 
-def _to_slack(md):
-    """Convert the model's GitHub-Markdown into Slack mrkdwn that actually
-    renders: headings/bold -> *bold*, [t](u) -> <u|t>, bullets -> •, and the
-    pipe table -> an aligned monospace code block (Slack has no Markdown tables)."""
-    out, tbl = [], []
+_MISMATCH = ("mismatch", "missing_sfdc")
+_ACTIONABLE = ("mismatch", "missing_sfdc", "warning")
 
-    def flush_table():
-        if not tbl:
-            return
-        rows = []
-        for r in tbl:
-            cells = [c.strip() for c in r.strip().strip("|").split("|")]
-            # drop the |---|---| separator row
-            if cells and all(c and set(c) <= set("-: ") for c in cells):
-                continue
-            rows.append(cells)
-        tbl.clear()
-        if not rows:
-            return
-        ncol = max(len(r) for r in rows)
-        rows = [r + [""] * (ncol - len(r)) for r in rows]
-        w = [max(len(r[c]) for r in rows) for c in range(ncol)]
-        body = []
-        for r in rows:
-            # pad every column except the last (last holds emoji of varying width)
-            cells = [r[c].ljust(w[c]) for c in range(ncol - 1)] + [r[ncol - 1]]
-            body.append("  ".join(cells).rstrip())
-        out.append("```\n" + "\n".join(body) + "\n```")
 
-    for ln in md.split("\n"):
-        if ln.lstrip().startswith("|"):
-            tbl.append(ln)
-            continue
-        flush_table()
-        s = re.sub(r"^\s*#{1,6}\s*(.*)$", r"*\1*", ln)          # headings -> bold
-        s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", s)  # links
-        s = s.replace("**", "*")                                  # bold
-        s = re.sub(r"^\s*[-*]\s+", "• ", s)                       # bullets
-        out.append(s)
-    flush_table()
-    return "\n".join(out).strip()
+def _render_slack(result, bundle):
+    """Build the concise Slack message from the model's structured audit and
+    compute the verdict deterministically. Returns (slack_text, clean).
+
+    Format (the one Sales Ops asked for): header + links + owner + a one-line
+    Result, then an 'Updates Required' bullet per fix — NO 16-row table."""
+    checks = [c for c in (result.get("checks") or []) if isinstance(c, dict)]
+    nmis = sum(1 for c in checks if c.get("status") in _MISMATCH)
+    nwarn = sum(1 for c in checks if c.get("status") == "warning")
+    nblk = sum(1 for c in checks if c.get("status") == "blocked")
+    clean = nmis == 0 and nwarn == 0 and nblk == 0
+    passed = 16 - nmis - nwarn - nblk
+
+    opp = bundle.get("opportunity") or {}
+    name = opp.get("Name") or "(unknown opportunity)"
+    tid = (bundle.get("chosen_contract") or {}).get("T_id")
+    label = result.get("contract_label") or (f"Postscript Service Order ({tid})" if tid else "the Service Order")
+
+    lines = [f"*Audit: {name} vs. {label}*"]
+    links = []
+    if bundle.get("opp_id"):
+        links.append(f"<https://postscript.lightning.force.com/lightning/r/Opportunity/{bundle['opp_id']}/view|Opportunity>")
+    if bundle.get("account_id"):
+        links.append(f"<https://postscript.lightning.force.com/lightning/r/Account/{bundle['account_id']}/view|Account>")
+    sd = _spotdraft_url(tid)
+    if sd:
+        links.append(f"<{sd}|SpotDraft Contract>")
+    if links:
+        lines.append("*Links:* " + " · ".join(links))
+    if bundle.get("owner"):
+        lines.append(f"*Owner:* {bundle['owner']}")
+    if result.get("preliminary"):
+        lines.append("*:warning: PRELIMINARY — contract in signature stage, not yet executed; "
+                     "terms may change before signing. Re-audit after execution.*")
+
+    if clean:
+        lines.append("*Result: 16 of 16 checks passed — clean* :white_check_mark:")
+        lines.append("")
+        lines.append(":white_check_mark: Clean — nothing to fix.")
+    else:
+        parts = []
+        if nmis:
+            parts.append(f"{nmis} mismatch{'' if nmis == 1 else 'es'}")
+        if nwarn:
+            parts.append(f"{nwarn} warning{'' if nwarn == 1 else 's'}")
+        if nblk:
+            parts.append(f"{nblk} blocked")
+        lines.append(f"*Result: {passed} of 16 checks passed — {', '.join(parts)}*")
+        lines.append("")
+        lines.append("*Updates Required:*")
+        for c in checks:
+            if c.get("status") in _ACTIONABLE:
+                fix = (c.get("fix") or "").strip()
+                lines.append(f"• {fix or c.get('name', 'see contract')}")
+
+    note = (result.get("note") or "").strip()
+    if note:
+        lines.append("")
+        lines.append(f"_{note}_")
+    return "\n".join(lines), clean
 
 
 def audit_message(alert_text, channel_id, sf=None, contract_tid=None, opp_record=None):
@@ -336,33 +397,17 @@ def audit_message(alert_text, channel_id, sf=None, contract_tid=None, opp_record
             return (f"Could not find an auditable Opportunity named *{name}* "
                     "(Closed Won / Stage 5 / Pricing & Negotiations).", False)
     bundle = gather(opp, li_rows, contract_rows, force_tid=contract_tid)
-    out = run_claude(channel_id, bundle)
-    # Strip any CLEAN: line the model emitted — we derive the verdict ourselves.
-    out = re.sub(r"(?im)^\s*CLEAN:\s*(?:yes|no)\s*$", "", out).strip()
-    # Deterministic verdict from the table the model produced (its own header
-    # counts / CLEAN line were unreliable).
-    clean, has_table, nmis, nwarn, nblk = _verdict_from_table(out)
-    if has_table:
-        passed = 16 - nmis - nwarn - nblk
-        mw = f"{nmis} mismatch{'' if nmis == 1 else 'es'}, {nwarn} warning{'' if nwarn == 1 else 's'}"
-        if nblk:
-            mw += f", {nblk} blocked"
-        # rewrite the Result line so the header always matches the table
-        out = re.sub(r"(?im)^\**\s*Result:.*$",
-                     f"**Result: {passed} of 16 checks passed — {mw}**", out, count=1)
+    result = run_audit(bundle)
+    out, clean = _render_slack(result, bundle)
 
-    # Deterministic tagging — never trust the model here. Strip any @-mentions /
-    # cc lines it emitted, then: clean => no tag; otherwise route by opp Type
-    # (Renewal/Upsell -> Caitlin; else Lola) + Viv if Plus, never Viv in #sfdc.
-    out = re.sub(r"(?im)^\s*cc\b.*$", "", out)
-    out = re.sub(r"<@U[A-Z0-9]+>", "", out).rstrip()
+    # Deterministic tagging — clean => no @-mention; otherwise route by opp Type
+    # (Renewal / Upsell / Existing Business -> Caitlin; else Lola) + Viv if the
+    # deal has Postscript Plus, but never Viv in #sfdc-oppty-audit.
     if not clean:
         typ = (opp.get("Type") or "").lower()
-        who = [TAG["caitlin"] if typ in ("renewal", "existing business") else TAG["lola"]]
+        who = [TAG["caitlin"] if typ in ("renewal", "upsell", "existing business") else TAG["lola"]]
         has_plus = any(li.get("Product") == "Postscript Plus" for li in bundle.get("line_items", []))
         if has_plus and channel_id != SFDC:
             who.append(TAG["viv"])
         out = out.rstrip() + "\n\ncc " + " ".join(f"<@{w}>" for w in who)
-    # Final step: render to Slack-native mrkdwn (table -> monospace code block).
-    out = _to_slack(out)
     return out, clean

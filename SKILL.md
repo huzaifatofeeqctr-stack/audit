@@ -206,35 +206,35 @@ the Woolx opp's `Minimum_Spend__c` should be $7,500, not the $15,000 aggregate.
 
 ## Output format
 
-Lead with a one-line verdict and quick links, then this exact table:
+Keep it short and scannable — Sales Ops asked for this exact shape. **Do not
+dump a 16-row table.** Lead with the opportunity, links, owner, and a one-line
+result, then an **Updates Required** bullet list (one line per fix):
 
 ```
-## Audit: <Opportunity Name> vs. <Contract Name>
-**Links:** [Opportunity](https://postscript.lightning.force.com/lightning/r/Opportunity/<OPP_ID>/view) · [Account](https://postscript.lightning.force.com/lightning/r/Account/<ACCOUNT_ID>/view) · [SpotDraft Contract](<contract_link, e.g. https://app.spotdraft.com/contracts/v2/<numeric id>>)
-**Owner:** <Opportunity Owner.Name>
-**Result: X of Y checks passed — N mismatches, M warnings**
+Audit: <Opportunity Name> vs. <Contract Name>
+Links: [Opportunity](https://postscript.lightning.force.com/lightning/r/Opportunity/<OPP_ID>/view) · [Account](https://postscript.lightning.force.com/lightning/r/Account/<ACCOUNT_ID>/view) · [SpotDraft Contract](https://app.spotdraft.com/contracts/v2/<numeric id>)
+Owner: <Opportunity Owner.Name>
+Result: 14 of 16 checks passed — 2 mismatches
 
-| # | Check | Contract | Salesforce | Result |
-|---|---|---|---|---|
-| 1 | Shop ID | 892108 | 892108 | ✅ Match |
-| 2 | Contract Start Date | 2026-07-01 | 2026-06-01 | ❌ Mismatch |
-| 7 | SMS Platform Fee | $2,000 (waived → $0) | $0 | ✅ Match |
-| 5 | Opt-out date | — | — | ➖ N/A — not in contract |
-...all 16 rows, in order...
+Updates Required:
+• Postscript AI `Platform_Fee__c`: $599 → $199
+• `Minimum_Spend__c`: $6,333.33 → $5,000
 ```
 
 When the audited contract is in signature stage (SIGN), insert
-`**⚠ PRELIMINARY — contract not yet executed; terms may change before signing. Re-audit after execution.**`
-directly under the Links line.
+`⚠ PRELIMINARY — contract not yet executed; terms may change before signing. Re-audit after execution.`
+directly under the Owner line.
 
-Result values: `✅ Match`, `❌ Mismatch`, `❌ Missing in SFDC`,
-`⚠ <short note>` (judgment calls like shop-count multiples or near-miss),
-`➖ N/A — not in contract`, `⛔ Blocked` (dependent check).
+When the deal is clean: `Result: 16 of 16 checks passed — clean ✅` then
+`✅ Clean — nothing to fix.` (with at most one short note if context helps).
 
-After the table, add a short **"What to fix"** list: one line per ❌, naming
-the exact Salesforce field/line item to correct and the value it should be.
-Show your work for any converted values (quarterly ÷ 3, waiver → $0). Do not
-write to Salesforce or SpotDraft — this audit is read-only.
+Still evaluate **all 16 checks** internally. Every ❌ mismatch and ⚠ actionable
+warning must appear as its **own** Updates Required bullet — never drop the
+second/third finding (status values: match, mismatch, missing_sfdc, warning,
+na, blocked). Each bullet is one terse line naming the exact Salesforce
+field/line item and its corrected value (`current → corrected`); show a
+converted value only when needed (quarterly ÷ 3, waiver → $0), and no
+explanatory sentences. Do not write to Salesforce or SpotDraft — read-only.
 
 **Slack tagging — tag only on a call to action.** When posting the audit to
 Slack, a **clean result (all applicable checks ✅, 0 mismatches and 0 warnings)
@@ -263,10 +263,11 @@ The **Mismatches** cell must list **every** ❌/⚠ for that deal, not just one:
 | [Acme \| NB 1-2026](https://postscript.lightning.force.com/lightning/r/Opportunity/<OPP_ID>/view) | Jane Rep | [T-12345](https://app.spotdraft.com/contracts/v2/12345) | 13/16 | Min $1 s/b $500; SMS platform fee $100 s/b $0 (waived); start date |
 ```
 
-Then include the **full per-opp detail block** (the complete 16-row check
-table from the Output format above) for **every** deal that has any ❌ or ⚠ —
-not a one-line verdict. A deal may be summarized in one line in the table only
-when it is fully clean (all applicable checks ✅). The per-wave "Fixes" list
-must enumerate every field to correct across all deals, one line per mismatch
-(e.g. "Allegory: `Minimum_Spend__c` $500 → $2,000; SMS `Platform_Fee__c` $100 →
-$0"), so nothing actionable is hidden behind a single headline.
+Then include the **full per-opp audit block** (the concise Output-format block
+above — Result line + every Updates Required bullet) for **every** deal that has
+any ❌ or ⚠ — not a one-line verdict. A deal may be summarized in one line in the
+table only when it is fully clean (all applicable checks ✅). The per-wave
+"Fixes" list must enumerate every field to correct across all deals, one line
+per mismatch (e.g. "Allegory: `Minimum_Spend__c` $500 → $2,000; SMS
+`Platform_Fee__c` $100 → $0"), so nothing actionable is hidden behind a single
+headline.
