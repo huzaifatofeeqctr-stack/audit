@@ -28,7 +28,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.6"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.7"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -455,35 +455,17 @@ def _reaudit_requested(channel_id, parent_ts):
     return False
 
 
-_REACT_TRIGGERS = ("retweet", "arrows_counterclockwise", "repeat")  # :retweet:, 🔄
-
-
-def _react_state(parent_msg):
-    """Re-audit reaction state on the MAIN message. The bot reacts back with the
-    same emoji as a 'processed' marker; Slack only lets us remove our OWN
-    reaction, so repeatability works like this:
-      • rep present, bot absent  -> 'process' (new request) — re-audit, then mark
-      • bot present, rep absent   -> 'reset'  (rep cleared theirs) — drop our marker
-      • both present              -> already handled, do nothing
-    To re-trigger, the rep removes and re-adds :retweet:. Returns (state, emoji)."""
-    for r in (parent_msg.get("reactions") or []):
-        if r.get("name") in _REACT_TRIGGERS:
-            users = r.get("users") or []
-            rep = any(u != BOT_USER_ID for u in users)
-            bot = BOT_USER_ID in users
-            if rep and not bot:
-                return ("process", r.get("name"))
-            if bot and not rep:
-                return ("reset", r.get("name"))
-    return (None, None)
-
-
 def scan_reaudits(limit=25):
-    """Re-audit threads where a rep asked for a recheck — either a keyword reply
-    in the thread (repeatable, timestamp-deduped) or a :retweet:/🔄 reaction on
-    the main message (one-shot, marker-deduped). Reuses _reformat_thread:
-    re-resolves the same opp + contract, re-runs, replaces the prior audit, and
-    ✅ the main message if now clean."""
+    """Re-audit threads where a rep asked for a recheck via a keyword reply in the
+    thread ('recheck' / 'reaudit' / 'fixed' / 'check again' …). Repeatable and
+    timestamp-deduped (only a NEW keyword reply newer than the last audit fires).
+    Reuses _reformat_thread: re-resolves the same opp + contract, re-runs, replaces
+    the prior audit, and syncs the ✅ on the main message (add if clean, clear if not).
+
+    Reactions are deliberately NOT used as a trigger: Slack only lets a bot remove
+    its OWN reaction (never the rep's), so a reaction trigger either re-fires forever
+    or forces the bot to add its own duplicate marker — both bad. The keyword reply
+    adds zero reaction clutter."""
     done = []
     for ch in AUDIT_CHANNELS:
         try:
@@ -493,29 +475,13 @@ def scan_reaudits(limit=25):
             continue
         for msg in msgs:
             ts = msg.get("ts")
-            if not ts:
+            if not ts or not msg.get("reply_count"):
                 continue
             try:
-                state, emoji = _react_state(msg)
-                if state == "reset":
-                    # rep cleared their :retweet: — drop our marker so it can be re-triggered
-                    clients.slack_unreact(ch, ts, emoji)
-                    continue
-                is_kw = bool(msg.get("reply_count")) and _reaudit_requested(ch, ts)
-                if not (state == "process" or is_kw):
-                    continue
-                if state == "process":
-                    # mark processed FIRST (dedup). If we can't (e.g. no
-                    # reactions:write), skip rather than re-fire every tick.
-                    mark = clients.slack_react(ch, ts, emoji)
-                    if not mark.get("ok"):
-                        done.append({"channel": ch, "parent_ts": ts,
-                                     "skipped": f"reaction trigger needs reactions:write ({mark.get('error')})"})
-                        continue
-                with _SIG_LOCK:
-                    r = _reformat_thread(ch, ts)
-                done.append({"channel": ch, "parent_ts": ts,
-                             "trigger": f"reaction:{emoji}" if state == "process" else "keyword", "reaudit": r})
+                if _reaudit_requested(ch, ts):
+                    with _SIG_LOCK:
+                        r = _reformat_thread(ch, ts)
+                    done.append({"channel": ch, "parent_ts": ts, "reaudit": r})
             except Exception as e:
                 done.append({"channel": ch, "parent_ts": ts, "error": str(e)[:200]})
     return done
@@ -565,6 +531,17 @@ def react_clean_backlog_endpoint(key: str = ""):
     if admin_key and key != admin_key:
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
     return {"ok": True, "result": react_clean_backlog()}
+
+
+@app.post("/admin/unreact")
+@app.get("/admin/unreact")
+def unreact_endpoint(channel_id: str, parent_ts: str, emoji: str = "white_check_mark", key: str = ""):
+    """Remove one of the bot's OWN reactions from a message (e.g. clear a stray
+    :retweet: marker the bot added). Cannot remove other users' reactions."""
+    admin_key = os.environ.get("ADMIN_KEY")
+    if admin_key and key != admin_key:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    return {"ok": True, "result": clients.slack_unreact(channel_id, parent_ts, emoji)}
 
 
 @app.post("/reaudit-thread")
