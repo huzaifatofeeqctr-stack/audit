@@ -187,6 +187,26 @@ def slack_react(channel_id, message_ts, emoji="white_check_mark"):
     return j
 
 
+def slack_unreact(channel_id, message_ts, emoji="white_check_mark"):
+    """Remove one of OUR reactions (reactions.remove only removes the bot's own).
+    BEST-EFFORT: never raises. `no_reaction` (nothing to remove) is fine. Used to
+    clear a stale ✅ when a re-audit is no longer clean, and to reset our own
+    re-audit marker so a :retweet: can be re-triggered."""
+    try:
+        r = requests.post(
+            f"{SLACK_API}/reactions.remove",
+            headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
+            json={"channel": channel_id, "timestamp": message_ts, "name": emoji},
+            timeout=30,
+        )
+        j = r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    if not j.get("ok") and j.get("error") not in ("no_reaction",):
+        print(f"[slack_unreact] non-fatal: reactions.remove failed: {j.get('error')}")
+    return j
+
+
 def slack_thread_has_bot_reply(channel_id, thread_ts, bot_user_id):
     """Dedupe: true if our bot already replied in this thread."""
     if not bot_user_id:

@@ -28,7 +28,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.4"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.6"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -406,7 +406,10 @@ def _reformat_thread(channel_id, parent_ts):
         except Exception:
             pass
     clients.slack_post(channel_id, message, thread_ts=parent_ts)
-    react = clients.slack_react(channel_id, parent_ts, "white_check_mark") if clean else None
+    # Sync the ✅ on the MAIN message: add it when clean, clear a stale one when
+    # a re-audit is no longer clean (so the check mark always reflects current state).
+    react = (clients.slack_react(channel_id, parent_ts, "white_check_mark") if clean
+             else clients.slack_unreact(channel_id, parent_ts, "white_check_mark"))
     return {"parent_ts": parent_ts, "opp": opp.get("Name"), "tid": tid,
             "clean": clean, "deleted": deleted, "react": react}
 
@@ -455,18 +458,24 @@ def _reaudit_requested(channel_id, parent_ts):
 _REACT_TRIGGERS = ("retweet", "arrows_counterclockwise", "repeat")  # :retweet:, 🔄
 
 
-def _react_reaudit_requested(parent_msg):
-    """Re-audit reaction (:retweet: / 🔄) added to the MAIN message by a non-bot
-    user, not yet processed. One-shot dedup: after handling, the bot reacts back
-    with the same emoji as a 'processed' marker (requires reactions:write), so it
-    won't re-fire. For repeatable re-checks, use a keyword reply. Returns the
-    emoji name, or None."""
+def _react_state(parent_msg):
+    """Re-audit reaction state on the MAIN message. The bot reacts back with the
+    same emoji as a 'processed' marker; Slack only lets us remove our OWN
+    reaction, so repeatability works like this:
+      • rep present, bot absent  -> 'process' (new request) — re-audit, then mark
+      • bot present, rep absent   -> 'reset'  (rep cleared theirs) — drop our marker
+      • both present              -> already handled, do nothing
+    To re-trigger, the rep removes and re-adds :retweet:. Returns (state, emoji)."""
     for r in (parent_msg.get("reactions") or []):
         if r.get("name") in _REACT_TRIGGERS:
             users = r.get("users") or []
-            if any(u != BOT_USER_ID for u in users) and BOT_USER_ID not in users:
-                return r.get("name")
-    return None
+            rep = any(u != BOT_USER_ID for u in users)
+            bot = BOT_USER_ID in users
+            if rep and not bot:
+                return ("process", r.get("name"))
+            if bot and not rep:
+                return ("reset", r.get("name"))
+    return (None, None)
 
 
 def scan_reaudits(limit=25):
@@ -487,10 +496,15 @@ def scan_reaudits(limit=25):
             if not ts:
                 continue
             try:
-                emoji = _react_reaudit_requested(msg)
-                if not (emoji or (msg.get("reply_count") and _reaudit_requested(ch, ts))):
+                state, emoji = _react_state(msg)
+                if state == "reset":
+                    # rep cleared their :retweet: — drop our marker so it can be re-triggered
+                    clients.slack_unreact(ch, ts, emoji)
                     continue
-                if emoji:
+                is_kw = bool(msg.get("reply_count")) and _reaudit_requested(ch, ts)
+                if not (state == "process" or is_kw):
+                    continue
+                if state == "process":
                     # mark processed FIRST (dedup). If we can't (e.g. no
                     # reactions:write), skip rather than re-fire every tick.
                     mark = clients.slack_react(ch, ts, emoji)
@@ -501,7 +515,7 @@ def scan_reaudits(limit=25):
                 with _SIG_LOCK:
                     r = _reformat_thread(ch, ts)
                 done.append({"channel": ch, "parent_ts": ts,
-                             "trigger": f"reaction:{emoji}" if emoji else "keyword", "reaudit": r})
+                             "trigger": f"reaction:{emoji}" if state == "process" else "keyword", "reaudit": r})
             except Exception as e:
                 done.append({"channel": ch, "parent_ts": ts, "error": str(e)[:200]})
     return done
@@ -512,6 +526,45 @@ def scan_reaudits(limit=25):
 def scan_reaudits_endpoint():
     """Sweep both channels for rep-requested re-audits (keyword reply)."""
     return {"ok": True, "result": scan_reaudits()}
+
+
+def react_clean_backlog(limit=60):
+    """Add the ✅ to the MAIN message of every thread whose latest audit is clean
+    (idempotent — already_reacted is fine). One-time backfill after reactions:write
+    was granted; new clean audits ✅ themselves at post time."""
+    done = []
+    for ch in AUDIT_CHANNELS:
+        try:
+            msgs = clients.slack_history(ch, limit)
+        except Exception as e:
+            done.append({"channel": ch, "error": str(e)})
+            continue
+        for msg in msgs:
+            ts = msg.get("ts")
+            if not ts or not msg.get("reply_count"):
+                continue
+            replies = clients.slack_thread_replies(ch, ts)[1:]
+            audits = [m for m in replies
+                      if (not BOT_USER_ID or m.get("user") == BOT_USER_ID)
+                      and "checks passed" in (m.get("text") or "")]
+            if not audits:
+                continue
+            latest = max(audits, key=lambda m: float(m.get("ts") or 0)).get("text") or ""
+            if "— clean" in latest or "Clean — nothing" in latest:
+                r = clients.slack_react(ch, ts, "white_check_mark")
+                done.append({"channel": ch, "parent_ts": ts, "react_ok": r.get("ok"),
+                             "error": r.get("error")})
+    return done
+
+
+@app.post("/admin/react-clean-backlog")
+@app.get("/admin/react-clean-backlog")
+def react_clean_backlog_endpoint(key: str = ""):
+    """One-time: ✅ the main message of all already-posted clean audits."""
+    admin_key = os.environ.get("ADMIN_KEY")
+    if admin_key and key != admin_key:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    return {"ok": True, "result": react_clean_backlog()}
 
 
 @app.post("/reaudit-thread")
