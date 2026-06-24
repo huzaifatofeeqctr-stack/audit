@@ -28,7 +28,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.2"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.3"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -424,25 +424,101 @@ def reformat_thread_endpoint(channel_id: str, parent_ts: str, key: str = ""):
         return {"ok": True, "result": _reformat_thread(channel_id, parent_ts)}
 
 
+_REAUDIT_KW = ("recheck", "re-audit", "reaudit", "re audit", "audit again",
+               "re-run", "rerun", "check again", "fixed", "re audit", "audit this")
+_AUDIT_TEXT = ("checks passed", "Audit:", "Updates Required", "Clean — nothing")
+
+
+def _reaudit_requested(channel_id, parent_ts):
+    """True if a human posted a re-audit keyword in the thread AFTER our most
+    recent audit reply (so a rep who fixed SFDC can ask for a fresh check).
+    Timestamp-based, so it never re-fires on its own — only a NEW keyword reply
+    newer than the latest audit triggers it."""
+    replies = clients.slack_thread_replies(channel_id, parent_ts)[1:]
+    last_audit = 0.0
+    for m in replies:
+        if (not BOT_USER_ID or m.get("user") == BOT_USER_ID) and \
+                any(s in (m.get("text") or "") for s in _AUDIT_TEXT):
+            last_audit = max(last_audit, float(m.get("ts") or 0))
+    if not last_audit:
+        return False  # no audit yet — fresh-audit path handles it
+    for m in replies:
+        if BOT_USER_ID and m.get("user") == BOT_USER_ID:
+            continue
+        if float(m.get("ts") or 0) <= last_audit:
+            continue
+        if any(k in (m.get("text") or "").lower() for k in _REAUDIT_KW):
+            return True
+    return False
+
+
+def scan_reaudits(limit=25):
+    """Re-audit threads where a rep asked for a recheck (keyword reply newer than
+    the last audit). Reuses _reformat_thread: re-resolves the same opp + contract,
+    re-runs, replaces the prior audit, and ✅ the main message if now clean."""
+    done = []
+    for ch in AUDIT_CHANNELS:
+        try:
+            msgs = clients.slack_history(ch, limit)
+        except Exception as e:
+            done.append({"channel": ch, "error": str(e)})
+            continue
+        for msg in msgs:
+            ts = msg.get("ts")
+            if not ts or not msg.get("reply_count"):
+                continue
+            try:
+                if _reaudit_requested(ch, ts):
+                    with _SIG_LOCK:
+                        r = _reformat_thread(ch, ts)
+                    done.append({"channel": ch, "parent_ts": ts, "reaudit": r})
+            except Exception as e:
+                done.append({"channel": ch, "parent_ts": ts, "error": str(e)[:200]})
+    return done
+
+
+@app.post("/scan-reaudits")
+@app.get("/scan-reaudits")
+def scan_reaudits_endpoint():
+    """Sweep both channels for rep-requested re-audits (keyword reply)."""
+    return {"ok": True, "result": scan_reaudits()}
+
+
+@app.post("/reaudit-thread")
+@app.get("/reaudit-thread")
+def reaudit_thread_endpoint(channel_id: str, parent_ts: str):
+    """Manually re-audit one thread now (re-resolves opp+contract, replaces the
+    prior audit, ✅ if clean)."""
+    with _SIG_LOCK:
+        return {"ok": True, "result": _reformat_thread(channel_id, parent_ts)}
+
+
 def _flag(name):
     return os.environ.get(name, "").lower() in ("1", "true", "yes")
 
 
+def _enabled(name):
+    """Background loops are ON by default; disable only by explicitly setting the
+    env var to a falsey value (0/false/no/off)."""
+    return os.environ.get(name, "true").strip().lower() not in ("0", "false", "no", "off", "")
+
+
 @app.on_event("startup")
 async def _start_poller():
-    if _flag("SCAN_ENABLED") or _flag("SIG_NOTIFY_ENABLED"):
+    if _enabled("SCAN_ENABLED") or _enabled("SIG_NOTIFY_ENABLED"):
         asyncio.create_task(_poller())
 
 
 async def _poller():
     interval = int(os.environ.get("SCAN_INTERVAL", "300"))
     while True:
-        if _flag("SCAN_ENABLED"):
-            try:
-                await asyncio.to_thread(scan_once)
-            except Exception:
-                traceback.print_exc()
-        if _flag("SIG_NOTIFY_ENABLED"):
+        if _enabled("SCAN_ENABLED"):
+            for fn in (scan_once, scan_reaudits):
+                try:
+                    await asyncio.to_thread(fn)
+                except Exception:
+                    traceback.print_exc()
+        if _enabled("SIG_NOTIFY_ENABLED"):
             try:
                 await asyncio.to_thread(_locked_scan_signatures)
             except Exception:
