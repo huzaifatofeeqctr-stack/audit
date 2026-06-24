@@ -28,7 +28,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.3"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.4"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -452,10 +452,29 @@ def _reaudit_requested(channel_id, parent_ts):
     return False
 
 
+_REACT_TRIGGERS = ("retweet", "arrows_counterclockwise", "repeat")  # :retweet:, 🔄
+
+
+def _react_reaudit_requested(parent_msg):
+    """Re-audit reaction (:retweet: / 🔄) added to the MAIN message by a non-bot
+    user, not yet processed. One-shot dedup: after handling, the bot reacts back
+    with the same emoji as a 'processed' marker (requires reactions:write), so it
+    won't re-fire. For repeatable re-checks, use a keyword reply. Returns the
+    emoji name, or None."""
+    for r in (parent_msg.get("reactions") or []):
+        if r.get("name") in _REACT_TRIGGERS:
+            users = r.get("users") or []
+            if any(u != BOT_USER_ID for u in users) and BOT_USER_ID not in users:
+                return r.get("name")
+    return None
+
+
 def scan_reaudits(limit=25):
-    """Re-audit threads where a rep asked for a recheck (keyword reply newer than
-    the last audit). Reuses _reformat_thread: re-resolves the same opp + contract,
-    re-runs, replaces the prior audit, and ✅ the main message if now clean."""
+    """Re-audit threads where a rep asked for a recheck — either a keyword reply
+    in the thread (repeatable, timestamp-deduped) or a :retweet:/🔄 reaction on
+    the main message (one-shot, marker-deduped). Reuses _reformat_thread:
+    re-resolves the same opp + contract, re-runs, replaces the prior audit, and
+    ✅ the main message if now clean."""
     done = []
     for ch in AUDIT_CHANNELS:
         try:
@@ -465,13 +484,19 @@ def scan_reaudits(limit=25):
             continue
         for msg in msgs:
             ts = msg.get("ts")
-            if not ts or not msg.get("reply_count"):
+            if not ts:
                 continue
             try:
-                if _reaudit_requested(ch, ts):
-                    with _SIG_LOCK:
-                        r = _reformat_thread(ch, ts)
-                    done.append({"channel": ch, "parent_ts": ts, "reaudit": r})
+                emoji = _react_reaudit_requested(msg)
+                if not (emoji or (msg.get("reply_count") and _reaudit_requested(ch, ts))):
+                    continue
+                with _SIG_LOCK:
+                    r = _reformat_thread(ch, ts)
+                # mark a reaction-trigger processed so it doesn't re-fire each tick
+                if emoji and not r.get("skipped"):
+                    clients.slack_react(ch, ts, emoji)
+                done.append({"channel": ch, "parent_ts": ts,
+                             "trigger": f"reaction:{emoji}" if emoji else "keyword", "reaudit": r})
             except Exception as e:
                 done.append({"channel": ch, "parent_ts": ts, "error": str(e)[:200]})
     return done
