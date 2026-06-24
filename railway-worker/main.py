@@ -490,11 +490,16 @@ def scan_reaudits(limit=25):
                 emoji = _react_reaudit_requested(msg)
                 if not (emoji or (msg.get("reply_count") and _reaudit_requested(ch, ts))):
                     continue
+                if emoji:
+                    # mark processed FIRST (dedup). If we can't (e.g. no
+                    # reactions:write), skip rather than re-fire every tick.
+                    mark = clients.slack_react(ch, ts, emoji)
+                    if not mark.get("ok"):
+                        done.append({"channel": ch, "parent_ts": ts,
+                                     "skipped": f"reaction trigger needs reactions:write ({mark.get('error')})"})
+                        continue
                 with _SIG_LOCK:
                     r = _reformat_thread(ch, ts)
-                # mark a reaction-trigger processed so it doesn't re-fire each tick
-                if emoji and not r.get("skipped"):
-                    clients.slack_react(ch, ts, emoji)
                 done.append({"channel": ch, "parent_ts": ts,
                              "trigger": f"reaction:{emoji}" if emoji else "keyword", "reaudit": r})
             except Exception as e:
