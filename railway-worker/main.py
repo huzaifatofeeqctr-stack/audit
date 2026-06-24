@@ -12,6 +12,7 @@ Dedupe: if our bot already replied in the thread, the request is skipped
 """
 import os
 import re
+import time
 import asyncio
 import threading
 import traceback
@@ -28,7 +29,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.7"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.8"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -455,18 +456,24 @@ def _reaudit_requested(channel_id, parent_ts):
     return False
 
 
-def scan_reaudits(limit=25):
+def scan_reaudits(limit=200, fresh_window=10800):
     """Re-audit threads where a rep asked for a recheck via a keyword reply in the
     thread ('recheck' / 'reaudit' / 'fixed' / 'check again' …). Repeatable and
     timestamp-deduped (only a NEW keyword reply newer than the last audit fires).
     Reuses _reformat_thread: re-resolves the same opp + contract, re-runs, replaces
     the prior audit, and syncs the ✅ on the main message (add if clean, clear if not).
 
+    Looks back `limit` top-level messages per channel (~days of history) so a
+    recheck on an older deal still lands, but only opens threads whose newest reply
+    is within `fresh_window` seconds — a keyword reply is recent, so this stays
+    cheap (we don't re-read every old thread each poll).
+
     Reactions are deliberately NOT used as a trigger: Slack only lets a bot remove
     its OWN reaction (never the rep's), so a reaction trigger either re-fires forever
     or forces the bot to add its own duplicate marker — both bad. The keyword reply
     adds zero reaction clutter."""
     done = []
+    cutoff = time.time() - fresh_window
     for ch in AUDIT_CHANNELS:
         try:
             msgs = clients.slack_history(ch, limit)
@@ -476,6 +483,10 @@ def scan_reaudits(limit=25):
         for msg in msgs:
             ts = msg.get("ts")
             if not ts or not msg.get("reply_count"):
+                continue
+            # only open threads with a RECENT reply (a new keyword reply is recent),
+            # so an older parent is still covered without reading every old thread
+            if float(msg.get("latest_reply") or 0) < cutoff:
                 continue
             try:
                 if _reaudit_requested(ch, ts):
