@@ -151,16 +151,24 @@ def slack_post(channel_id, text, thread_ts=None):
 
 
 def slack_react(channel_id, message_ts, emoji="white_check_mark"):
-    r = requests.post(
-        f"{SLACK_API}/reactions.add",
-        headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
-        json={"channel": channel_id, "timestamp": message_ts, "name": emoji},
-        timeout=30,
-    )
-    j = r.json()
-    # already_reacted is fine
-    if not j.get("ok") and j.get("error") != "already_reacted":
-        raise RuntimeError(f"slack reactions.add failed: {j.get('error')}")
+    """Add a reaction. BEST-EFFORT: never raises. A reaction is a nice-to-have
+    cosmetic signal (✅ on clean deals); a failure here — e.g. the bot token
+    lacking `reactions:write` (missing_scope), or already_reacted — must never
+    break the audit, which has already been posted by the time we react.
+    Returns the Slack response dict (with `ok`/`error`) for diagnostics."""
+    try:
+        r = requests.post(
+            f"{SLACK_API}/reactions.add",
+            headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
+            json={"channel": channel_id, "timestamp": message_ts, "name": emoji},
+            timeout=30,
+        )
+        j = r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    if not j.get("ok") and j.get("error") not in ("already_reacted",):
+        # log but don't raise — the audit post already succeeded
+        print(f"[slack_react] non-fatal: reactions.add failed: {j.get('error')}")
     return j
 
 
