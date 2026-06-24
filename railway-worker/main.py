@@ -28,7 +28,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.1"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.2"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -332,6 +332,43 @@ def dedup_thread_endpoint(channel_id: str, parent_ts: str, key: str = ""):
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
     with _SIG_LOCK:
         return {"ok": True, "result": _delete_duplicate_audits(channel_id, parent_ts)}
+
+
+_AUDIT_FRAGMENT = ("```", "checks passed", "Audit:", "Updates Required",
+                   "What to fix", "PRELIMINARY", "Result:", "*Links:*", "Links:")
+
+
+def _cleanup_old_audits(channel_id, parent_ts):
+    """Keep only the NEWEST bot audit message in a thread; delete older
+    audit-like bot fragments (old multi-message/table audits left stray bits that
+    the narrower dedup filter missed). Self-scoped to our own messages."""
+    replies = clients.slack_thread_replies(channel_id, parent_ts)
+    frags = [m for m in (replies[1:] if replies else [])
+             if (not BOT_USER_ID or m.get("user") == BOT_USER_ID)
+             and any(s in (m.get("text") or "") for s in _AUDIT_FRAGMENT)]
+    if len(frags) <= 1:
+        return {"parent_ts": parent_ts, "kept": frags[0]["ts"] if frags else None, "deleted": 0}
+    frags.sort(key=lambda m: float(m["ts"]))
+    deleted = 0
+    for m in frags[:-1]:  # keep the most recent (the fresh audit)
+        try:
+            clients.slack_delete(channel_id, m["ts"])
+            deleted += 1
+        except Exception:
+            pass
+    return {"parent_ts": parent_ts, "kept": frags[-1]["ts"], "deleted": deleted}
+
+
+@app.post("/admin/cleanup-thread")
+@app.get("/admin/cleanup-thread")
+def cleanup_thread_endpoint(channel_id: str, parent_ts: str, key: str = ""):
+    """Remove stray old audit fragments in a thread, keeping only the newest
+    audit. Self-scoped to our own messages; ADMIN_KEY-guarded when set."""
+    admin_key = os.environ.get("ADMIN_KEY")
+    if admin_key and key != admin_key:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    with _SIG_LOCK:
+        return {"ok": True, "result": _cleanup_old_audits(channel_id, parent_ts)}
 
 
 def _reformat_thread(channel_id, parent_ts):
