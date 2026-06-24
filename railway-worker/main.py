@@ -28,7 +28,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.0"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.7.1"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -332,6 +332,59 @@ def dedup_thread_endpoint(channel_id: str, parent_ts: str, key: str = ""):
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
     with _SIG_LOCK:
         return {"ok": True, "result": _delete_duplicate_audits(channel_id, parent_ts)}
+
+
+def _reformat_thread(channel_id, parent_ts):
+    """One-time cleanup: replace the old table-format bot audit replies in a
+    thread with a single fresh (current-format) audit, and ✅ the parent if clean.
+    Re-resolves the exact opp + contract from the old reply (Opportunity link +
+    T-id), so it works for open/signature-stage opps too. Re-audits BEFORE
+    deleting, so a failure leaves the existing replies untouched."""
+    replies = clients.slack_thread_replies(channel_id, parent_ts)
+    audits = [m for m in (replies[1:] if replies else [])
+              if (not BOT_USER_ID or m.get("user") == BOT_USER_ID)
+              and ("checks passed" in (m.get("text") or "") or "Audit:" in (m.get("text") or ""))]
+    if not audits:
+        return {"parent_ts": parent_ts, "skipped": "no existing audit reply"}
+    txt = "\n".join(m.get("text", "") for m in audits)
+    mo = re.search(r"/Opportunity/([A-Za-z0-9]{15,18})", txt)
+    if not mo:
+        return {"parent_ts": parent_ts, "skipped": "no opp id in old audit"}
+    opp_id = mo.group(1)
+    mt = re.search(r"T-\d+", txt) or re.search(r"/contracts/v2/(\d+)", txt)
+    tid = None
+    if mt:
+        tid = mt.group(0) if mt.group(0).startswith("T-") else f"T-{mt.group(1)}"
+    rows = clients.soql(f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE Id = '{opp_id}'")
+    if not rows:
+        return {"parent_ts": parent_ts, "skipped": f"opp {opp_id} not found"}
+    opp = rows[0]
+    message, clean = audit.audit_message(
+        f"*Name:* {opp.get('Name')}", channel_id, contract_tid=tid, opp_record=opp)
+    deleted = 0
+    for m in audits:
+        try:
+            clients.slack_delete(channel_id, m["ts"])
+            deleted += 1
+        except Exception:
+            pass
+    clients.slack_post(channel_id, message, thread_ts=parent_ts)
+    react = clients.slack_react(channel_id, parent_ts, "white_check_mark") if clean else None
+    return {"parent_ts": parent_ts, "opp": opp.get("Name"), "tid": tid,
+            "clean": clean, "deleted": deleted, "react": react}
+
+
+@app.post("/admin/reformat-thread")
+@app.get("/admin/reformat-thread")
+def reformat_thread_endpoint(channel_id: str, parent_ts: str, key: str = ""):
+    """One-time: swap a thread's old table-format audit(s) for a single fresh one
+    and ✅ the parent if clean. Self-scoped to our own audit replies. ADMIN_KEY-
+    guarded when that env is set."""
+    admin_key = os.environ.get("ADMIN_KEY")
+    if admin_key and key != admin_key:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    with _SIG_LOCK:
+        return {"ok": True, "result": _reformat_thread(channel_id, parent_ts)}
 
 
 def _flag(name):
