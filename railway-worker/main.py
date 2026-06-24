@@ -22,7 +22,7 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.6.2"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.6.3"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -124,17 +124,50 @@ _SIG_FIELDS = ("Id, SpotDraft_ID__c, Status__c, Opportunity__c, Opportunity__r.N
                "Account__c, Account__r.Name, Contract_Link__c")
 
 
-def _resolve_opp_via_account(account_id):
-    """Best-effort opp for a contract whose Opportunity__c is blank: the single
-    in-flight opp on the account. Returns its Name, or None if 0 or >1 match."""
+def _open_opp_by_shop(shop_id):
+    """The single OPEN opp for a shop id, or None if 0 or >1 match. A signing
+    contract precedes close, so its opp is open (IsClosed = false)."""
+    if not shop_id:
+        return None
+    rows = clients.soql(
+        f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE Shop_ID__c = '{shop_id}' "
+        "AND IsClosed = false ORDER BY CreatedDate DESC"
+    )
+    return rows[0] if len(rows) == 1 else None
+
+
+def _open_opp_by_account(account_id):
+    """Account-level fallback: the single OPEN opp on the account, or None."""
     if not account_id:
         return None
     rows = clients.soql(
-        "SELECT Name FROM Opportunity WHERE AccountId = '%s' AND (StageName = 'Closed Won' "
-        "OR StageName LIKE '5 -%%' OR StageName = 'Pricing & Negotiations') "
-        "AND CloseDate >= LAST_N_DAYS:45 ORDER BY CloseDate DESC" % account_id
+        f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE AccountId = '{account_id}' "
+        "AND IsClosed = false ORDER BY CreatedDate DESC"
     )
-    return rows[0]["Name"] if len(rows) == 1 else None
+    return rows[0] if len(rows) == 1 else None
+
+
+def _resolve_opp_record(contract):
+    """Resolve the Opportunity a signing contract is tied to, returning a full
+    opp record (audit.OPP_FIELDS) or None. Order:
+      1. contract.Opportunity__c if populated (the explicit link);
+      2. the contract's Shop ID (from SpotDraft key_pointers) -> single open opp
+         (Caitlin's method; also disambiguates multi-shop accounts);
+      3. the account -> single open opp.
+    None at every step (incl. ambiguous 0/>1 matches) => caller posts notify-only."""
+    opp_id = contract.get("Opportunity__c")
+    if opp_id:
+        rows = clients.soql(f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE Id = '{opp_id}'")
+        if rows:
+            return rows[0]
+    tid = contract.get("SpotDraft_ID__c")
+    shop = None
+    if tid:
+        try:
+            shop = audit.shop_id_from_key_pointers(clients.spotdraft_key_pointers(tid))
+        except Exception:
+            shop = None
+    return _open_opp_by_shop(shop) or _open_opp_by_account(contract.get("Account__c"))
 
 
 def scan_signatures(limit=100):
@@ -166,7 +199,8 @@ def scan_signatures(limit=100):
         if not tid or tid in announced:
             continue
         acct = (c.get("Account__r") or {}).get("Name") or "(unknown account)"
-        opp_name = (c.get("Opportunity__r") or {}).get("Name") or _resolve_opp_via_account(c.get("Account__c"))
+        opp = _resolve_opp_record(c)
+        opp_name = opp.get("Name") if opp else None
         link = c.get("Contract_Link__c") or ""
         notice = (
             f":pencil: *Contract sent for signature* — *{acct}*\n"
@@ -180,9 +214,10 @@ def scan_signatures(limit=100):
             posted = clients.slack_post(SIG_CHANNEL, notice)
             announced.add(tid)
             entry = {"tid": tid, "account": acct, "opp": opp_name, "audited": False}
-            if SIG_AUTO_AUDIT and opp_name:
+            if SIG_AUTO_AUDIT and opp:
                 try:
-                    message, clean = audit.audit_message(f"*Name:* {opp_name}", SIG_CHANNEL, contract_tid=tid)
+                    message, clean = audit.audit_message(
+                        f"*Name:* {opp_name}", SIG_CHANNEL, contract_tid=tid, opp_record=opp)
                     clients.slack_post(SIG_CHANNEL, message, thread_ts=posted.get("ts"))
                     if clean:
                         clients.slack_react(SIG_CHANNEL, posted.get("ts"), "white_check_mark")
@@ -196,11 +231,68 @@ def scan_signatures(limit=100):
     return done
 
 
+def backfill_signatures(limit=200):
+    """One-time/idempotent: for signing contracts ALREADY announced (which
+    scan_signatures skips forever), thread a PRELIMINARY audit under the existing
+    notice when the opp now resolves (e.g. via the new Shop-ID path). Safe to
+    re-run — threads that already have an audit are skipped."""
+    done = []
+    statuses = "','".join(_SIG_STATUSES)
+    try:
+        contracts = clients.soql(
+            f"SELECT {_SIG_FIELDS} FROM SpotDraft_Contract__c WHERE Status__c IN ('{statuses}') "
+            "AND LastModifiedDate = LAST_N_DAYS:1 ORDER BY LastModifiedDate DESC"
+        )
+    except Exception as e:
+        return [{"error": str(e)[:200]}]
+
+    # map each announced T-id -> the notice's ts (to thread under it)
+    notice_ts = {}
+    try:
+        for m in clients.slack_history(SIG_CHANNEL, limit):
+            t = m.get("text", "") or ""
+            if "sent for signature" in t:
+                for tid in re.findall(r"T-\d+", t):
+                    notice_ts.setdefault(tid, m.get("ts"))
+    except Exception as e:
+        return [{"error": str(e)[:200]}]
+
+    for c in contracts:
+        tid = c.get("SpotDraft_ID__c")
+        ts = notice_ts.get(tid)
+        if not tid or not ts:
+            continue  # not previously announced -> scan_signatures handles it
+        if _thread_already_audited(SIG_CHANNEL, ts):
+            continue  # already has an audit -> idempotent skip
+        opp = _resolve_opp_record(c)
+        if not opp:
+            done.append({"tid": tid, "resolved": False})
+            continue
+        try:
+            message, clean = audit.audit_message(
+                f"*Name:* {opp.get('Name')}", SIG_CHANNEL, contract_tid=tid, opp_record=opp)
+            clients.slack_post(SIG_CHANNEL, message, thread_ts=ts)
+            if clean:
+                clients.slack_react(SIG_CHANNEL, ts, "white_check_mark")
+            done.append({"tid": tid, "opp": opp.get("Name"), "audited": True, "clean": clean})
+        except Exception as e:
+            done.append({"tid": tid, "audit_error": str(e)[:200]})
+    return done
+
+
 @app.post("/scan-signatures")
 @app.get("/scan-signatures")
 def scan_signatures_endpoint():
     """Manually trigger the signature-stage scan (also runnable via cron)."""
     return {"ok": True, "result": scan_signatures()}
+
+
+@app.post("/backfill-signatures")
+@app.get("/backfill-signatures")
+def backfill_signatures_endpoint():
+    """One-time/idempotent backfill: audit already-announced signing contracts
+    whose opp now resolves (threads under the existing notice)."""
+    return {"ok": True, "result": backfill_signatures()}
 
 
 def _flag(name):

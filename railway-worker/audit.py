@@ -55,6 +55,25 @@ def parse_opp_name(alert_text: str):
     return m.group(1).strip() if m else None
 
 
+def shop_id_from_key_pointers(key_pointers):
+    """Pull the shop ID from a contract's SpotDraft key_pointers. The ShopNameID
+    field holds e.g. 'Glow Recipe (25819)' — return '25819'. Returns None if
+    the field is absent/unparseable. (SpotDraft_Contract__c has no shop-id
+    field, so the contract's shop id only lives here.)"""
+    if not isinstance(key_pointers, list):
+        return None
+    for kp in key_pointers:
+        if not isinstance(kp, dict):
+            continue
+        if kp.get("field_name") == "slug_shopnameid" or kp.get("label") == "ShopNameID":
+            v = kp.get("value")
+            if isinstance(v, str):
+                m = re.search(r"\((\d+)\)", v) or re.search(r"\b(\d{3,})\b", v)
+                if m:
+                    return m.group(1)
+    return None
+
+
 # ----------------------------------------------------------- data gathering
 OPP_FIELDS = (
     "Id, Name, StageName, Type, AccountId, Account.Name, Owner.Name, Shop_ID__c, "
@@ -281,13 +300,18 @@ def _to_slack(md):
     return "\n".join(out).strip()
 
 
-def audit_message(alert_text, channel_id, sf=None, contract_tid=None):
+def audit_message(alert_text, channel_id, sf=None, contract_tid=None, opp_record=None):
     """Returns (slack_text, clean: bool) or raises.
 
     sf (optional): pre-fetched Salesforce data from n8n, shaped
       { "opp": <Opportunity SOQL record>, "lineItems": [...], "contracts": [...] }.
     When supplied, the worker uses it instead of querying Salesforce itself —
     this is how the n8n flow feeds SF data and sidesteps the worker's SF creds.
+
+    opp_record (optional): a pre-resolved Opportunity SOQL record to audit
+    directly (used by the signature path, which resolves an open/pre-close opp
+    via Shop ID — find_opportunity's closed-stage filter would reject it). When
+    set, gather() still fetches line items + contracts itself.
     """
     name = parse_opp_name(alert_text)
     if not name:
@@ -303,6 +327,9 @@ def audit_message(alert_text, channel_id, sf=None, contract_tid=None):
                     "(Closed Won / Stage 5 / Pricing & Negotiations).", False)
         li_rows = sf.get("lineItems", sf.get("line_items")) or []
         contract_rows = sf.get("contracts") or []
+    elif opp_record is not None:
+        # caller already resolved the opp (e.g. signature path, open-stage opp)
+        opp = opp_record
     else:
         opp = find_opportunity(name)
         if not opp:
