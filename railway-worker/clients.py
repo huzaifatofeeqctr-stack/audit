@@ -150,6 +150,21 @@ def slack_post(channel_id, text, thread_ts=None):
     return j
 
 
+def slack_delete(channel_id, ts):
+    """Delete a message. chat.delete can only remove messages our bot authored,
+    so this is safe to expose for cleaning up our own duplicate posts."""
+    r = requests.post(
+        f"{SLACK_API}/chat.delete",
+        headers={"Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}"},
+        json={"channel": channel_id, "ts": ts},
+        timeout=30,
+    )
+    j = r.json()
+    if not j.get("ok"):
+        raise RuntimeError(f"slack chat.delete failed: {j.get('error')}")
+    return j
+
+
 def slack_react(channel_id, message_ts, emoji="white_check_mark"):
     """Add a reaction. BEST-EFFORT: never raises. A reaction is a nice-to-have
     cosmetic signal (✅ on clean deals); a failure here — e.g. the bot token

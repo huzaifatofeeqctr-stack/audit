@@ -13,6 +13,7 @@ Dedupe: if our bot already replied in the thread, the request is skipped
 import os
 import re
 import asyncio
+import threading
 import traceback
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -22,7 +23,12 @@ import audit
 
 app = FastAPI(title="closed-won-contract-audit worker")
 BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
-VERSION = "0.6.3"  # bump on each deploy to verify GitHub auto-deploy is live
+
+# Serializes the signature scan + backfill so overlapping HTTP triggers (or the
+# poller firing while a manual call runs) can't each pass the "already audited?"
+# check before any has posted — which would double-post audits into a thread.
+_SIG_LOCK = threading.Lock()
+VERSION = "0.6.4"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -284,7 +290,8 @@ def backfill_signatures(limit=200):
 @app.get("/scan-signatures")
 def scan_signatures_endpoint():
     """Manually trigger the signature-stage scan (also runnable via cron)."""
-    return {"ok": True, "result": scan_signatures()}
+    with _SIG_LOCK:  # serialize with any other scan/backfill run (no double-post)
+        return {"ok": True, "result": scan_signatures()}
 
 
 @app.post("/backfill-signatures")
@@ -292,7 +299,39 @@ def scan_signatures_endpoint():
 def backfill_signatures_endpoint():
     """One-time/idempotent backfill: audit already-announced signing contracts
     whose opp now resolves (threads under the existing notice)."""
-    return {"ok": True, "result": backfill_signatures()}
+    with _SIG_LOCK:  # serialize with any other scan/backfill run (no double-post)
+        return {"ok": True, "result": backfill_signatures()}
+
+
+def _delete_duplicate_audits(channel_id, parent_ts):
+    """Keep the earliest bot-authored audit reply in a thread, delete the rest.
+    Self-scoped: only ever removes our own messages that look like an audit, so
+    it can't touch human messages or notices. Returns {kept, deleted}."""
+    replies = clients.slack_thread_replies(channel_id, parent_ts)[1:]
+    audits = [m for m in replies
+              if (not BOT_USER_ID or m.get("user") == BOT_USER_ID)
+              and ("checks passed" in (m.get("text") or "") or "Audit:" in (m.get("text") or ""))]
+    deleted = []
+    for m in audits[1:]:  # keep audits[0] (earliest)
+        try:
+            clients.slack_delete(channel_id, m["ts"])
+            deleted.append(m["ts"])
+        except Exception as e:
+            deleted.append({"ts": m["ts"], "error": str(e)[:120]})
+    return {"kept": audits[0]["ts"] if audits else None, "deleted": deleted}
+
+
+@app.post("/admin/dedup-thread")
+@app.get("/admin/dedup-thread")
+def dedup_thread_endpoint(channel_id: str, parent_ts: str, key: str = ""):
+    """Remove duplicate bot audit replies under a thread (keep the earliest).
+    Guarded by ADMIN_KEY when that env is set; the op is self-scoped to our own
+    audit messages regardless."""
+    admin_key = os.environ.get("ADMIN_KEY")
+    if admin_key and key != admin_key:
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    with _SIG_LOCK:
+        return {"ok": True, "result": _delete_duplicate_audits(channel_id, parent_ts)}
 
 
 def _flag(name):
@@ -315,10 +354,15 @@ async def _poller():
                 traceback.print_exc()
         if _flag("SIG_NOTIFY_ENABLED"):
             try:
-                await asyncio.to_thread(scan_signatures)
+                await asyncio.to_thread(_locked_scan_signatures)
             except Exception:
                 traceback.print_exc()
         await asyncio.sleep(interval)
+
+
+def _locked_scan_signatures():
+    with _SIG_LOCK:  # serialize with manual /scan-signatures and /backfill calls
+        return scan_signatures()
 
 
 @app.get("/health")
