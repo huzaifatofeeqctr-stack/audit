@@ -29,7 +29,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.8.2"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.8.3"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -131,7 +131,7 @@ _SIG_FIELDS = ("Id, Name, SpotDraft_ID__c, Status__c, Opportunity__c, Opportunit
                "Account__c, Account__r.Name, Contract_Link__c")
 # Document types that should NOT trigger a "sent for signature" notice — these
 # aren't auditable Service Orders (Caitlin: NDAs must not post into the channel).
-_SKIP_DOC_PATTERNS = ("nda", "non-disclosure", "non disclosure", "mutual nda",
+_SKIP_DOC_PATTERNS = ("nondisclosure", "non-disclosure", "non disclosure", "nda",
                       "confidentiality", "dpa", "data processing")
 
 
