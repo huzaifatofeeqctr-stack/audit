@@ -220,13 +220,16 @@ AUDIT_TOOL = {
                         },
                         "fix": {
                             "type": "string",
-                            "description": "Required when status is mismatch / missing_sfdc / "
-                                           "warning: a terse one-line correction naming the exact "
-                                           "Salesforce field or line item and its corrected value, "
-                                           "e.g. 'Postscript AI `Platform_Fee__c`: $599 → $199' or "
-                                           "'`Minimum_Spend__c`: $6,333.33 → $5,000'. Show a "
-                                           "converted value only when needed (qtr ÷ 3, waiver → $0). "
-                                           "No explanatory sentences. Empty for match / na.",
+                            "description": "Set ONLY when the value genuinely differs (status "
+                                           "mismatch / missing_sfdc / actionable warning): a terse "
+                                           "one-line correction naming the exact Salesforce field "
+                                           "or line item and its corrected value, e.g. 'Postscript "
+                                           "AI `Platform_Fee__c`: $599 → $199'. The two sides MUST "
+                                           "differ — never a no-op like '$699 → $699' or "
+                                           "'value correct'/'no change' (that is a `match`, leave "
+                                           "empty). Show a converted value only when needed "
+                                           "(qtr ÷ 3, waiver → $0). No explanatory sentences. "
+                                           "Empty for match / na.",
                         },
                     },
                     "required": ["n", "name", "status"],
@@ -251,6 +254,16 @@ _AUDIT_INSTRUCTIONS = (
     "- For EACH check whose status is `mismatch`, `missing_sfdc`, or an actionable `warning`, "
     "supply a terse `fix` (the worker turns these into the 'Updates Required' bullets). Every "
     "discrepancy on the deal must have its own fix — never report only the first/largest.\n"
+    "- NEVER flag a value that matches. A check is `mismatch`/`warning` ONLY when the contract "
+    "and Salesforce values genuinely differ (money: by more than $5). If they agree, status is "
+    "`match` with NO fix. Never emit a no-op fix like `$1,250 → $1,250`, `$699 → $699`, "
+    "'value correct', 'no change', 'matches', or 'OK' — that is a `match`. Zero real differences "
+    "=> the deal is clean.\n"
+    "- Plus package (check 13): the SFDC `Package_Type__c` is the bare tier — `Essentials`, "
+    "`Signature`, or `Launch`, with NO 'Plus' prefix. Contract 'Plus Signature' vs SFDC "
+    "'Signature' is a MATCH. Never suggest changing it to 'Plus Signature'/'Plus Launch'/etc.\n"
+    "- Do not hallucinate Plus inclusion: only mark Plus included (11) when there is a real "
+    "Postscript Plus Addendum SECTION in the PDF AND a 'Postscript Plus' line item.\n"
     "- `preliminary` is true iff the chosen contract is in a signature stage (SIGN).\n"
     "## Evidence rule (critical)\n"
     "Product inclusion (DSC check 9, Plus check 11, AI check 15) is determined ONLY by "
@@ -297,6 +310,32 @@ def _spotdraft_url(tid):
 
 _MISMATCH = ("mismatch", "missing_sfdc")
 _ACTIONABLE = ("mismatch", "missing_sfdc", "warning")
+_NOOP_PHRASES = ("value correct", "no change", "no update", "matches", "unchanged",
+                 "already correct", "correct —", "correct-", "— ok", "(ok)", "s/b same",
+                 "no fix", "is correct", "no changes")
+
+
+def _is_noop_fix(fix):
+    """True if a 'fix' actually says nothing needs changing — e.g. '$699 → $699',
+    'value correct', 'matches'. These must never become an Updates Required bullet
+    or count as a mismatch (Caitlin: a matching value should read clean)."""
+    if not fix:
+        return True
+    f = fix.lower()
+    if any(p in f for p in _NOOP_PHRASES):
+        return True
+    # "<label>: A → B" with A and B equal (ignoring $ , whitespace backticks)
+    m = re.search(r"→(.+)$", fix)
+    if m:
+        before = fix[:m.start()]
+        b = re.search(r":\s*(.+)$", before)
+        left = (b.group(1) if b else before)
+        right = m.group(1)
+        # take the value before any trailing note (em dash / parenthesis)
+        norm = lambda s: re.sub(r"[\s`$,]", "", re.split(r"[—(]", s)[0]).lower()
+        if norm(left) and norm(left) == norm(right):
+            return True
+    return False
 
 
 def _render_slack(result, bundle):
@@ -304,10 +343,14 @@ def _render_slack(result, bundle):
     compute the verdict deterministically. Returns (slack_text, clean).
 
     Format (the one Sales Ops asked for): header + links + owner + a one-line
-    Result, then an 'Updates Required' bullet per fix — NO 16-row table."""
+    Result, then an 'Updates Required' bullet per fix — NO 16-row table.
+    No-op 'fixes' (value already matches) are dropped and do NOT count as issues."""
     checks = [c for c in (result.get("checks") or []) if isinstance(c, dict)]
-    nmis = sum(1 for c in checks if c.get("status") in _MISMATCH)
-    nwarn = sum(1 for c in checks if c.get("status") == "warning")
+    # genuine, actionable fixes only (drop matching-value false flags)
+    real = [c for c in checks if c.get("status") in _ACTIONABLE
+            and not _is_noop_fix((c.get("fix") or "").strip())]
+    nmis = sum(1 for c in real if c.get("status") in _MISMATCH)
+    nwarn = sum(1 for c in real if c.get("status") == "warning")
     nblk = sum(1 for c in checks if c.get("status") == "blocked")
     clean = nmis == 0 and nwarn == 0 and nblk == 0
     passed = 16 - nmis - nwarn - nblk
@@ -349,10 +392,9 @@ def _render_slack(result, bundle):
         lines.append(f"*Result: {passed} of 16 checks passed — {', '.join(parts)}*")
         lines.append("")
         lines.append("*Updates Required:*")
-        for c in checks:
-            if c.get("status") in _ACTIONABLE:
-                fix = (c.get("fix") or "").strip()
-                lines.append(f"• {fix or c.get('name', 'see contract')}")
+        for c in real:
+            fix = (c.get("fix") or "").strip()
+            lines.append(f"• {fix or c.get('name', 'see contract')}")
 
     note = (result.get("note") or "").strip()
     if note:

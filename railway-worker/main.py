@@ -29,7 +29,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.7.8"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.8.0"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -127,20 +127,60 @@ def scan_endpoint():
 SIG_CHANNEL = os.environ.get("SIG_CHANNEL", "C0B88KMFJ3E")  # #sfdc-oppty-audit
 SIG_AUTO_AUDIT = os.environ.get("SIG_AUTO_AUDIT", "true").lower() in ("1", "true", "yes")
 _SIG_STATUSES = ("Signing", "Awaiting Signature")
-_SIG_FIELDS = ("Id, SpotDraft_ID__c, Status__c, Opportunity__c, Opportunity__r.Name, "
+_SIG_FIELDS = ("Id, Name, SpotDraft_ID__c, Status__c, Opportunity__c, Opportunity__r.Name, "
                "Account__c, Account__r.Name, Contract_Link__c")
+# Document types that should NOT trigger a "sent for signature" notice — these
+# aren't auditable Service Orders (Caitlin: NDAs must not post into the channel).
+_SKIP_DOC_PATTERNS = ("nda", "non-disclosure", "non disclosure", "mutual nda",
+                      "confidentiality", "dpa", "data processing")
+
+
+def _is_skippable_doc(contract):
+    """True if the signing doc is a non-auditable type (e.g. an NDA) we should
+    not announce. Matched on the SpotDraft_Contract__c Name."""
+    name = (contract.get("Name") or "").lower()
+    return any(p in name for p in _SKIP_DOC_PATTERNS)
+
+
+# Total Quota Relief lives on the Opportunity under one of a few possible API
+# names across orgs; try each (cheaply, guarded) and use the first that resolves.
+_QUOTA_FIELDS = ("Total_Quota_Relief_Roll_Up__c", "Total_Quota_Relief__c",
+                 "Quota_Relief_Roll_Up__c", "Total_Quota_Relief_Rollup__c")
+
+
+def _quota_relief(opp_id):
+    if not opp_id:
+        return None
+    for fld in _QUOTA_FIELDS:
+        try:
+            rows = clients.soql(f"SELECT {fld} FROM Opportunity WHERE Id = '{opp_id}'")
+        except Exception:
+            continue
+        if rows:
+            return rows[0].get(fld)  # field exists (value may be 0/empty)
+    return None
+
+
+def _fmt_money(v):
+    try:
+        f = float(v)
+        return "${:,.0f}".format(f) if f == int(f) else "${:,.2f}".format(f)
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def _open_opp_by_shop(shop_id):
-    """The single OPEN opp for a shop id, or None if 0 or >1 match. A signing
-    contract precedes close, so its opp is open (IsClosed = false)."""
+    """Auto-link by Shop ID (Caitlin's method): the OPEN opp for this shop. A
+    signing contract precedes close, so its opp is open (IsClosed = false). If
+    several are open, take the most recently created (the active deal) so we link
+    in every case rather than falling back to notify-only."""
     if not shop_id:
         return None
     rows = clients.soql(
         f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE Shop_ID__c = '{shop_id}' "
         "AND IsClosed = false ORDER BY CreatedDate DESC"
     )
-    return rows[0] if len(rows) == 1 else None
+    return rows[0] if rows else None
 
 
 def _open_opp_by_account(account_id):
@@ -205,15 +245,23 @@ def scan_signatures(limit=100):
         tid = c.get("SpotDraft_ID__c")
         if not tid or tid in announced:
             continue
+        if _is_skippable_doc(c):
+            continue  # NDAs / non-auditable docs don't post a notice (Caitlin)
         acct = (c.get("Account__r") or {}).get("Name") or "(unknown account)"
         opp = _resolve_opp_record(c)
         opp_name = opp.get("Name") if opp else None
+        owner = ((opp.get("Owner") or {}).get("Name") if opp else None) or "—"
+        qr = _quota_relief(opp.get("Id")) if opp else None
+        qr_str = _fmt_money(qr) if qr not in (None, "") else "—"
         link = c.get("Contract_Link__c") or ""
+        contract_line = f"{tid}" + (f" (<{link}|open in SpotDraft>)" if link else "")
         notice = (
             f":pencil: *Contract sent for signature* — *{acct}*\n"
             f"> *Status:* {c.get('Status__c')}\n"
-            f"> *Contract:* {tid}" + (f" (<{link}|open in SpotDraft>)" if link else "") + "\n"
-            f"> *Opportunity:* {opp_name or '—'}"
+            f"> *Contract:* {contract_line}\n"
+            f"> *Opportunity:* {opp_name or '—'}\n"
+            f"> *Opportunity Owner:* {owner}\n"
+            f"> *Total Quota Relief:* {qr_str}"
         )
         if not opp_name:
             notice += "\n> _Couldn't auto-link an opportunity — will audit when it closes._"
@@ -578,23 +626,37 @@ def _enabled(name):
 async def _start_poller():
     if _enabled("SCAN_ENABLED") or _enabled("SIG_NOTIFY_ENABLED"):
         asyncio.create_task(_poller())
+    if _enabled("SCAN_ENABLED"):
+        asyncio.create_task(_reaudit_poller())
 
 
 async def _poller():
+    """Main loop: discover new deals to audit + post signature notices."""
     interval = int(os.environ.get("SCAN_INTERVAL", "300"))
     while True:
         if _enabled("SCAN_ENABLED"):
-            for fn in (scan_once, scan_reaudits):
-                try:
-                    await asyncio.to_thread(fn)
-                except Exception:
-                    traceback.print_exc()
+            try:
+                await asyncio.to_thread(scan_once)
+            except Exception:
+                traceback.print_exc()
         if _enabled("SIG_NOTIFY_ENABLED"):
             try:
                 await asyncio.to_thread(_locked_scan_signatures)
             except Exception:
                 traceback.print_exc()
         await asyncio.sleep(interval)
+
+
+async def _reaudit_poller():
+    """Fast loop so a rep's `recheck` reply is picked up near-real-time (default
+    45s) instead of waiting on the 5-minute main poll. Both channels."""
+    interval = int(os.environ.get("REAUDIT_INTERVAL", "45"))
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await asyncio.to_thread(scan_reaudits)
+        except Exception:
+            traceback.print_exc()
 
 
 def _locked_scan_signatures():

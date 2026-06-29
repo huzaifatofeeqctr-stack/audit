@@ -112,7 +112,7 @@ Addendum**, **Postscript AI Addendum**. Pull these values:
 | SMS Platform Fee + waiver | SMS Marketing Addendum "Platform Fees" row; note any "Platform Fee Waiver" |
 | Minimum Commitment + frequency | SMS Marketing Addendum "Minimum Commitment" section — note whether monthly or quarterly |
 | DSC fee + waiver | SMS Marketing Addendum "Dedicated Short Code" section |
-| Plus: dates, package, fee | Postscript Plus Addendum (package e.g. "Plus Launch" → compare the tier word, "Launch") |
+| Plus: dates, package, fee | Postscript Plus Addendum. Package tier is one of Essentials / Signature / Launch (the addendum may prefix "Plus", e.g. "Plus Launch" → compare only the tier word "Launch"; the SFDC value is the bare tier with no "Plus") |
 | AI Platform Fee | Postscript AI Addendum "AI Platform Fee Price" row (per month per Shop) |
 
 ## Reading Salesforce
@@ -156,6 +156,20 @@ Field gotchas learned from the live org — trust these over labels:
 Run all of these. A blank/null Salesforce value where the contract has a
 value is a **mismatch** (report as "missing in SFDC"), not a skip.
 
+**Never flag a value that matches.** A check is `mismatch`/`warning` ONLY when
+the contract value and the Salesforce value genuinely differ (for money, differ
+by more than $5). If they agree, the status is `match` and the check produces
+**no** `fix` and **no** Updates Required bullet. Do not emit a "fix" that
+restates the same value (e.g. `$1,250 → $1,250`, `$699 → $699`, "value correct",
+"no change", "matches", "OK") — if there is nothing to change, it is a match,
+full stop. A deal with zero genuine differences must report **clean**.
+
+**Do not hallucinate Plus (or any product) inclusion.** Decide Plus included
+(check 11) strictly from an actual **Postscript Plus Addendum section** in the
+contract PDF **and** a "Postscript Plus" SFDC line item. A populated key-pointer
+template field is not evidence. If both are absent, checks 11–14 are ✅/N-A
+(correctly absent) — never invent a Plus mismatch.
+
 **Monetary tolerance (±$5).** For every check that compares a **dollar amount**
 — SMS Platform Fee (7), Minimum Commitment (8), DSC fee (10), Plus fee (14),
 AI Platform Fee (16) — treat the values as a **✅ Match when they are within
@@ -179,7 +193,7 @@ shop IDs, and product inclusion remain exact.
 | 10 | DSC monthly fee | DSC fee, **waiver-adjusted** (waived → $0) | DSC line item `Platform_Fee__c` | Amounts within $5 (±$5 tolerance). **Blank/null counts as $0** — blank = ✅ when waived or $0 (blank against a real discounted fee like $200 is still a mismatch) |
 | 11 | Plus included | Postscript Plus Addendum present? | "Postscript Plus" line item exists | Both present or both absent |
 | 12 | Plus service dates | Plus Addendum Start/End Dates | Window from Plus line item `Number_Of_Months__c`: start = Service Order Start Date, end = start + N months − 1 day | Derived window equals Plus Addendum dates. **Mid-month tolerance:** within 1 day = ✅ (note it); gap >1 day is a real mismatch |
-| 13 | Plus package | Plus Addendum package tier (e.g. "Plus Launch" → "Launch") | Plus line item `Package_Type__c` | Tier matches |
+| 13 | Plus package | Plus Addendum package tier | Plus line item `Package_Type__c` | Tier matches. **The SFDC `Package_Type__c` for a Plus line is the bare tier — exactly one of `Essentials`, `Signature`, or `Launch` — with NO "Plus" prefix.** The contract may write it as "Plus Signature" / "Plus Launch"; compare only the tier word. So contract "Plus Signature" vs SFDC "Signature" is a ✅ Match, NOT a mismatch. Never expect or suggest "Plus Signature"/"Plus Essentials"/"Plus Launch" as the SFDC value |
 | 14 | Plus monthly fee | Plus Addendum Fees ($/mo per Shop) | Plus line item `Platform_Fee__c` | Amounts within $5 (±$5 tolerance) |
 | 15 | AI included | Postscript AI Addendum present? | "Postscript AI" line item exists | Both present or both absent |
 | 16 | AI Platform Fee | AI Addendum "AI Platform Fee Price" ($/mo per Shop) | AI line item `Platform_Fee__c` — **ignore `Calculated_Rate__c` and `UnitPrice`** | Amounts within $5 (±$5 tolerance) |
