@@ -115,22 +115,59 @@ def spotdraft_pdf_text(tid):
     return extract_pdf_text(body)
 
 
+_SPACE_KERN = -100  # a TJ kerning adjustment below this = a real word gap → space
+
+
+def _unescape_pdf(b):
+    return re.sub(rb"\\([()\\])", rb"\1", b)
+
+
 def extract_pdf_text(data: bytes) -> str:
-    """Decompress FlateDecode streams and pull parenthesized text (no poppler needed)."""
-    out = []
+    """Decompress FlateDecode streams and reconstruct text from the PDF's text-
+    showing operators (TJ arrays + Tj). Postscript Service Orders render close to
+    one glyph per string with TJ kerning, so the words must be rebuilt by
+    concatenating the glyph strings and inserting a space only on a large negative
+    kern (a real word gap). The old approach joined EVERY parenthesized string
+    with a space, which shredded the contract into 'P l a t f o r m  F e e' — i.e.
+    the whole SO was unreadable and the audit ran blind to the PDF. No poppler."""
+    lines = []
     for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
         try:
             d = zlib.decompress(m.group(1))
         except Exception:
             continue
-        seg = []
-        for t in re.finditer(rb"\((?:\\.|[^()\\])*\)", d):
-            s = re.sub(rb"\\([()\\])", rb"\1", t.group(0)[1:-1])
-            seg.append(s)
-        if seg:
-            out.append(b" ".join(seg))
-    text = b"\n".join(out).decode("latin-1", "replace")
-    return re.sub(r"[ \t]+", " ", text)
+        for tm in re.finditer(rb"\[(.*?)\]\s*TJ|(\((?:\\.|[^()\\])*\))\s*Tj", d, re.S):
+            if tm.group(1) is not None:  # TJ array: strings interleaved with kerns
+                line = b""
+                for el in re.finditer(rb"\((?:\\.|[^()\\])*\)|-?\d+\.?\d*", tm.group(1)):
+                    tok = el.group(0)
+                    if tok[:1] == b"(":
+                        line += _unescape_pdf(tok[1:-1])
+                    else:
+                        try:
+                            if float(tok) < _SPACE_KERN:
+                                line += b" "
+                        except ValueError:
+                            pass
+                lines.append(line)
+            else:                        # (string) Tj
+                lines.append(_unescape_pdf(tm.group(2)[1:-1]))
+    text = re.sub(r"[ \t]+", " ", b"\n".join(lines).decode("latin-1", "replace"))
+    # Fallback: if an oddly-structured PDF yields almost nothing via TJ/Tj, fall
+    # back to the naive all-strings method so we never return empty.
+    if len(text.strip()) < 200:
+        out = []
+        for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+            try:
+                d = zlib.decompress(m.group(1))
+            except Exception:
+                continue
+            seg = [_unescape_pdf(t.group(0)[1:-1])
+                   for t in re.finditer(rb"\((?:\\.|[^()\\])*\)", d)]
+            if seg:
+                out.append(b" ".join(seg))
+        text = re.sub(r"[ \t]+", " ", b"\n".join(out).decode("latin-1", "replace"))
+    return text
 
 
 # --------------------------------------------------------------------- Slack
