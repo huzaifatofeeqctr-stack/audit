@@ -13,9 +13,12 @@ Dedupe: if our bot already replied in the thread, the request is skipped
 import os
 import re
 import time
+import hmac
+import hashlib
 import asyncio
 import threading
 import traceback
+from urllib.parse import parse_qs
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -29,7 +32,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.8.3"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.9.0"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -610,6 +613,83 @@ def reaudit_thread_endpoint(channel_id: str, parent_ts: str):
     prior audit, ✅ if clean)."""
     with _SIG_LOCK:
         return {"ok": True, "result": _reformat_thread(channel_id, parent_ts)}
+
+
+# ----- /reaudit slash command: on-demand audit by opp link / name / T-id -----
+SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET")
+
+
+def _verify_slack(body_bytes, headers):
+    """Verify a Slack slash-command request (HMAC of 'v0:ts:body'). If no signing
+    secret is configured, allow through so it can be set up/tested first."""
+    if not SLACK_SIGNING_SECRET:
+        return True
+    ts = headers.get("x-slack-request-timestamp", "")
+    sig = headers.get("x-slack-signature", "")
+    try:
+        if not ts or not sig or abs(time.time() - int(ts)) > 300:
+            return False
+    except ValueError:
+        return False
+    base = b"v0:" + ts.encode() + b":" + body_bytes
+    mine = "v0=" + hmac.new(SLACK_SIGNING_SECRET.encode(), base, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(mine, sig)
+
+
+def _audit_target(channel_id, text):
+    """Resolve an opp from free text (Salesforce opp link/Id, SpotDraft link/T-id,
+    or an opp name) and post a fresh audit to the channel. Returns a short status."""
+    text = (text or "").strip()
+    opp, tid = None, None
+    m = re.search(r"/Opportunity/([A-Za-z0-9]{15,18})", text) or re.search(r"\b(006[A-Za-z0-9]{12,15})\b", text)
+    if m:
+        rows = clients.soql(f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE Id = '{m.group(1)}'")
+        opp = rows[0] if rows else None
+    if not opp:
+        mt = re.search(r"T-\d+", text) or re.search(r"/contracts/v2/(\d+)", text)
+        if mt:
+            tid = mt.group(0) if mt.group(0).startswith("T-") else f"T-{mt.group(1)}"
+            crows = clients.soql(f"SELECT {_SIG_FIELDS} FROM SpotDraft_Contract__c WHERE SpotDraft_ID__c = '{tid}'")
+            if crows:
+                opp = _resolve_opp_record(crows[0])
+    name = (opp.get("Name") if opp else None) or text
+    if opp:
+        message, clean = audit.audit_message(f"*Name:* {name}", channel_id, contract_tid=tid, opp_record=opp)
+    else:                                  # fall back to name lookup (Closed-Won/Stage-5)
+        message, clean = audit.audit_message(f"*Name:* {name}", channel_id)
+    posted = clients.slack_post(channel_id, message)
+    if clean:
+        clients.slack_react(channel_id, posted.get("ts"), "white_check_mark")
+    return {"opp": name, "clean": clean}
+
+
+@app.post("/slack/command")
+async def slack_command(req: Request):
+    """Slack slash command (e.g. `/reaudit <opp link | name | T-id>`). Acks within
+    Slack's 3s window, then audits in the background and posts the result in-channel."""
+    raw = await req.body()
+    if not _verify_slack(raw, req.headers):
+        return JSONResponse({"text": "signature verification failed"}, status_code=401)
+    form = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
+    channel_id = form.get("channel_id")
+    text = (form.get("text") or "").strip()
+    if not text:
+        return {"response_type": "ephemeral",
+                "text": "Usage: `/reaudit <opportunity link, name, or T-id>`"}
+
+    def _bg():
+        try:
+            with _SIG_LOCK:
+                _audit_target(channel_id, text)
+        except Exception as e:
+            try:
+                clients.slack_post(channel_id, f":warning: `/reaudit` error: `{str(e)[:200]}`")
+            except Exception:
+                pass
+
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"response_type": "ephemeral",
+            "text": f":mag: Auditing *{text[:80]}*… the result will post in this channel shortly."}
 
 
 def _flag(name):
