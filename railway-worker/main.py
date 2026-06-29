@@ -32,7 +32,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.9.0"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.9.1"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -690,6 +690,59 @@ async def slack_command(req: Request):
     threading.Thread(target=_bg, daemon=True).start()
     return {"response_type": "ephemeral",
             "text": f":mag: Auditing *{text[:80]}*… the result will post in this channel shortly."}
+
+
+def _reaudit_or_audit_thread(channel_id, parent_ts):
+    """Re-audit a specific thread: if it already has an audit, refresh it
+    (replace + ✅ sync); otherwise, if the parent is a Rattle deal alert, audit it
+    fresh in-thread. Used by the 'Re-audit this deal' message shortcut so a recheck
+    is tied to the exact deal — works inside threads (slash commands can't)."""
+    r = _reformat_thread(channel_id, parent_ts)
+    if not r.get("skipped"):
+        return r
+    msgs = clients.slack_thread_replies(channel_id, parent_ts)
+    if not msgs:
+        return r
+    text = _flatten_blocks(msgs[0])
+    if not audit.parse_opp_name(text):
+        return {"parent_ts": parent_ts, "skipped": "no audit to refresh and parent isn't a deal alert"}
+    message, clean = audit.audit_message(text, channel_id)
+    clients.slack_post(channel_id, message, thread_ts=parent_ts)
+    if clean:
+        clients.slack_react(channel_id, parent_ts, "white_check_mark")
+    return {"parent_ts": parent_ts, "fresh": True, "clean": clean}
+
+
+@app.post("/slack/interactivity")
+async def slack_interactivity(req: Request):
+    """Slack interactivity (message shortcuts). The 'Re-audit this deal' shortcut
+    fires on a specific message; we re-audit THAT thread (case-specific, works in
+    threads). Acks empty within 3s and does the work in the background."""
+    import json as _json
+    raw = await req.body()
+    if not _verify_slack(raw, req.headers):
+        return JSONResponse({"text": "signature verification failed"}, status_code=401)
+    form = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
+    try:
+        payload = _json.loads(form.get("payload", "{}"))
+    except ValueError:
+        return JSONResponse({})
+    if payload.get("type") == "message_action":
+        ch = (payload.get("channel") or {}).get("id")
+        msg = payload.get("message") or {}
+        parent_ts = msg.get("thread_ts") or msg.get("ts")
+        if ch and parent_ts:
+            def _bg():
+                try:
+                    with _SIG_LOCK:
+                        _reaudit_or_audit_thread(ch, parent_ts)
+                except Exception as e:
+                    try:
+                        clients.slack_post(ch, f":warning: re-audit error: `{str(e)[:200]}`", thread_ts=parent_ts)
+                    except Exception:
+                        pass
+            threading.Thread(target=_bg, daemon=True).start()
+    return JSONResponse({})
 
 
 def _flag(name):
