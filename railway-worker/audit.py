@@ -315,27 +315,37 @@ _NOOP_PHRASES = ("value correct", "no change", "no update", "matches", "unchange
                  "no fix", "is correct", "no changes")
 
 
+def _value_token(s, last=False):
+    """Pull the comparable value from one side of a `→`: prefer a date, then a
+    money/number, else the first/last word. `last=True` takes the token nearest
+    the arrow on the left side; otherwise the first token on the right side
+    (skipping trailing notes like 'per SO AI Addendum')."""
+    nums = re.findall(r"\d{4}-\d{2}-\d{2}|[\d,]+(?:\.\d+)?", s)
+    if nums:
+        return (nums[-1] if last else nums[0]).replace(",", "")
+    words = re.findall(r"[A-Za-z][\w]*", s)
+    if words:
+        return (words[-1] if last else words[0]).lower()
+    return ""
+
+
 def _is_noop_fix(fix):
-    """True if a 'fix' actually says nothing needs changing — e.g. '$699 → $699',
-    'value correct', 'matches'. These must never become an Updates Required bullet
-    or count as a mismatch (Caitlin: a matching value should read clean)."""
+    """True if a 'fix' says nothing needs changing — e.g. '$699 → $699 per SO AI
+    Addendum', '$1,250 → $1,250 — value correct', 'matches'. These must never
+    become an Updates Required bullet or count as a mismatch (Caitlin: a matching
+    value should read clean)."""
     if not fix:
         return True
-    f = fix.lower()
-    if any(p in f for p in _NOOP_PHRASES):
+    if any(p in fix.lower() for p in _NOOP_PHRASES):
         return True
-    # "<label>: A → B" with A and B equal (ignoring $ , whitespace backticks)
-    m = re.search(r"→(.+)$", fix)
-    if m:
-        before = fix[:m.start()]
-        b = re.search(r":\s*(.+)$", before)
-        left = (b.group(1) if b else before)
-        right = m.group(1)
-        # take the value before any trailing note (em dash / parenthesis)
-        norm = lambda s: re.sub(r"[\s`$,]", "", re.split(r"[—(]", s)[0]).lower()
-        if norm(left) and norm(left) == norm(right):
-            return True
-    return False
+    if "→" not in fix:
+        return False
+    left, right = fix.split("→", 1)
+    if ":" in left:                      # drop the field-name label
+        left = left.rsplit(":", 1)[1]
+    lv = _value_token(left, last=True)   # value just before the arrow
+    rv = _value_token(right, last=False)  # value just after the arrow
+    return bool(lv) and lv == rv
 
 
 def _render_slack(result, bundle):
