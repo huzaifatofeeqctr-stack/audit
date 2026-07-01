@@ -119,11 +119,22 @@ def account_contracts(account_id):
     )
 
 
+_GOVERNING_DOC = ("service order", "proposed", "statement of work", "sow",
+                  "contract addendum", "amendment", "order form")
+
+
 def pick_contract(contracts):
-    """Newest Service-Order-type contract that is Completed or in Signing."""
-    so = [c for c in contracts if "service order" in (c.get("Name") or "").lower()
-          or "proposed" in (c.get("Name") or "").lower()]
-    pool = so or contracts
+    """Newest governing contract that is Completed or in Signing. `contracts` is
+    ordered newest-first, so the first match is the most recent governing doc.
+
+    Governing docs include Service Orders AND Statements of Work / Contract
+    Addendums — an Upsell/Amendment is papered by a **SOW attached to the upsell**,
+    not the base Service Order. Selecting only 'Service Order'-named contracts made
+    the agent audit an amendment against the prior base SO (wrong dates/terms)."""
+    def is_governing(c):
+        n = (c.get("Name") or "").lower()
+        return any(k in n for k in _GOVERNING_DOC)
+    pool = [c for c in contracts if is_governing(c)] or contracts
     for status in ("Completed", "Signing"):
         for c in pool:
             if c.get("Status__c") == status and c.get("SpotDraft_ID__c"):
@@ -229,7 +240,11 @@ AUDIT_TOOL = {
                                            "'value correct'/'no change' (that is a `match`, leave "
                                            "empty). Show a converted value only when needed "
                                            "(qtr ÷ 3, waiver → $0). No explanatory sentences. "
-                                           "Empty for match / na.",
+                                           "**When a line item is MISSING in SFDC, state the fee/"
+                                           "value to enter from the contract, e.g. 'Add Postscript "
+                                           "AI line item — `Platform_Fee__c` $99' or 'Add Dedicated "
+                                           "Short Code line item — $250'** (never just 'add X line "
+                                           "item' with no value). Empty for match / na.",
                         },
                     },
                     "required": ["n", "name", "status"],

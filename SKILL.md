@@ -33,13 +33,18 @@ name, a SpotDraft contract link, or a contract PDF. Whatever is missing, find:
    `lookup_opportunity` / `get_contract_list` to locate it,
    `get_contract_content` or `get_contract_key_pointers` to read it). If the
    user uploaded a PDF instead, extract text from the PDF directly.
-3. **Contract selection**: prefer the executed Proposed Service Order
-   belonging to this deal (created nearest — usually shortly before — the opp
-   CloseDate, typically by the opp owner). If the deal's SO exists but is still
-   in signature stage (SpotDraft contract_status "SIGN" — sent for
-   signature, not yet fully executed), audit that in-progress contract instead
-   and mark the result PRELIMINARY. Do NOT fall back to a prior-term
-   executed SO when the current deal has its own SO (SIGN or EXECUTED).
+3. **Contract selection**: prefer the executed governing contract belonging to
+   this deal (created nearest — usually shortly before — the opp CloseDate,
+   typically by the opp owner). The governing contract is whichever of these is
+   newest for the deal: a **Service Order** (New Business / Renewal) **or a
+   Statement of Work / Contract Addendum** (**Upsell / Amendment**). An
+   Upsell/Amendment is papered by a **SOW / Contract Addendum attached to that
+   upsell** — audit against **that** SOW, NOT the prior base Service Order. Using
+   the older base SO pulls stale dates/terms (e.g. the base SO's start date
+   instead of the upsell's). If the deal's contract is still in signature stage
+   (SpotDraft "SIGN"), audit that in-progress contract and mark the result
+   PRELIMINARY. Do NOT fall back to a prior-term executed SO when the current
+   deal has its own Service Order or SOW (SIGN or EXECUTED).
 
 ### Auto-renewal deals (Renewal opps with no newly signed SO)
 
@@ -248,7 +253,10 @@ second/third finding (status values: match, mismatch, missing_sfdc, warning,
 na, blocked). Each bullet is one terse line naming the exact Salesforce
 field/line item and its corrected value (`current → corrected`); show a
 converted value only when needed (quarterly ÷ 3, waiver → $0), and no
-explanatory sentences. Do not write to Salesforce or SpotDraft — read-only.
+explanatory sentences. **When a line item is missing in SFDC, always state the
+fee/value to enter from the contract** — e.g. `Add Postscript AI line item —
+Platform_Fee $99` or `Add Dedicated Short Code line item — $250`, never a bare
+"add X line item". Do not write to Salesforce or SpotDraft — read-only.
 
 **Slack tagging — tag only on a call to action.** When posting the audit to
 Slack, a **clean result (all applicable checks ✅, 0 mismatches and 0 warnings)
