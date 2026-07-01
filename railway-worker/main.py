@@ -32,7 +32,7 @@ BOT_USER_ID = os.environ.get("SLACK_BOT_USER_ID")
 # poller firing while a manual call runs) can't each pass the "already audited?"
 # check before any has posted — which would double-post audits into a thread.
 _SIG_LOCK = threading.Lock()
-VERSION = "0.9.2"  # bump on each deploy to verify GitHub auto-deploy is live
+VERSION = "0.9.3"  # bump on each deploy to verify GitHub auto-deploy is live
 
 # --- self-contained Slack polling (no n8n / Slack Events needed) ---
 RATTLE_USER = os.environ.get("RATTLE_USER_ID", "U05AA8MBV9B")
@@ -440,10 +440,16 @@ def _reformat_thread(channel_id, parent_ts):
     if not mo:
         return {"parent_ts": parent_ts, "skipped": "no opp id in old audit"}
     opp_id = mo.group(1)
-    mt = re.search(r"T-\d+", txt) or re.search(r"/contracts/v2/(\d+)", txt)
+    # Only PIN the prior contract when the old audit was signature-stage
+    # (PRELIMINARY) — there we must re-audit the same signing SO. For an executed
+    # deal, DON'T pin: let contract selection re-pick (now SOW-aware), so a recheck
+    # on an Upsell correctly moves to its SOW instead of re-using the base SO the
+    # old audit wrongly chose.
     tid = None
-    if mt:
-        tid = mt.group(0) if mt.group(0).startswith("T-") else f"T-{mt.group(1)}"
+    if "PRELIMINARY" in txt:
+        mt = re.search(r"T-\d+", txt) or re.search(r"/contracts/v2/(\d+)", txt)
+        if mt:
+            tid = mt.group(0) if mt.group(0).startswith("T-") else f"T-{mt.group(1)}"
     rows = clients.soql(f"SELECT {audit.OPP_FIELDS} FROM Opportunity WHERE Id = '{opp_id}'")
     if not rows:
         return {"parent_ts": parent_ts, "skipped": f"opp {opp_id} not found"}
