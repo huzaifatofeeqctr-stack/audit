@@ -36,8 +36,13 @@ name, a SpotDraft contract link, or a contract PDF. Whatever is missing, find:
 3. **Contract selection**: prefer the executed governing contract belonging to
    this deal (created nearest — usually shortly before — the opp CloseDate,
    typically by the opp owner). The governing contract is whichever of these is
-   newest for the deal: a **Service Order** (New Business / Renewal) **or a
-   Statement of Work / Contract Addendum** (**Upsell / Amendment**). An
+   newest for the deal: a **Service Order** (New Business / Renewal), **a
+   Statement of Work / Contract Addendum** (**Upsell / Amendment**), **or a
+   Fondue / Gimme agreement** (Fondue-only deals — every SFDC line item is
+   Fondue/Gimme). A Fondue deal is papered by its own Fondue agreement — never
+   audit it against the account's old SMS Service Order (possibly for a
+   different brand entirely); SMS-only checks (min spend, packages, DSC, opt-out)
+   are `na` when the governing doc is a Fondue agreement. An
    Upsell/Amendment is papered by a **SOW / Contract Addendum attached to that
    upsell** — audit against **that** SOW, NOT the prior base Service Order. Using
    the older base SO pulls stale dates/terms (e.g. the base SO's start date

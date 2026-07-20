@@ -121,24 +121,52 @@ def account_contracts(account_id):
 
 _GOVERNING_DOC = ("service order", "proposed", "statement of work", "sow",
                   "contract addendum", "amendment", "order form")
+# Never governing, regardless of recency (mirror of main.py's notifier skip list).
+_NON_GOVERNING = ("nondisclosure", "non-disclosure", "non disclosure", "nda",
+                  "confidentiality", "dpa", "data processing")
+# Fondue/Gimme deals are papered by their own agreement, not an SMS SO.
+_FONDUE_NAMES = ("fondue", "gimme")
 
 
-def pick_contract(contracts):
+def pick_contract(contracts, products=None):
     """Newest governing contract that is Completed or in Signing. `contracts` is
-    ordered newest-first, so the first match is the most recent governing doc.
+    ordered newest-first, so the first match in a tier is the most recent.
 
-    Governing docs include Service Orders AND Statements of Work / Contract
-    Addendums — an Upsell/Amendment is papered by a **SOW attached to the upsell**,
-    not the base Service Order. Selecting only 'Service Order'-named contracts made
-    the agent audit an amendment against the prior base SO (wrong dates/terms)."""
-    def is_governing(c):
-        n = (c.get("Name") or "").lower()
-        return any(k in n for k in _GOVERNING_DOC)
-    pool = [c for c in contracts if is_governing(c)] or contracts
-    for status in ("Completed", "Signing"):
-        for c in pool:
-            if c.get("Status__c") == status and c.get("SpotDraft_ID__c"):
-                return c
+    Tiered, product-aware:
+    1. Fondue-only deal (every SFDC line item is Fondue/Gimme) → a Fondue/Gimme
+       agreement. A Fondue winback was audited against the account's years-old
+       'SMS Marketing Service Order' because the Fondue agreement's name matched
+       no governing keyword — the deal's own paper must win (Lola/Haus case).
+    2. Governing-named docs — Service Orders AND Statements of Work / Contract
+       Addendums: an Upsell/Amendment is papered by a SOW attached to the upsell,
+       not the base Service Order (Viv/Alen case).
+    3. Anything else on the account except never-governing docs (NDA/DPA)."""
+    def name(c):
+        return (c.get("Name") or "").lower()
+
+    def newest_executed(pool):
+        for status in ("Completed", "Signing"):
+            for c in pool:
+                if c.get("Status__c") == status and c.get("SpotDraft_ID__c"):
+                    return c
+        return None
+
+    eligible = [c for c in contracts
+                if not any(k in name(c) for k in _NON_GOVERNING)]
+    prods = [(p or "").lower() for p in (products or []) if p]
+    fondue_only = bool(prods) and all(
+        any(f in p for f in _FONDUE_NAMES) for p in prods)
+    tiers = []
+    if fondue_only:
+        tiers.append([c for c in eligible
+                      if any(f in name(c) for f in _FONDUE_NAMES)])
+    tiers.append([c for c in eligible
+                  if any(k in name(c) for k in _GOVERNING_DOC)])
+    tiers.append(eligible)
+    for pool in tiers:
+        chosen = newest_executed(pool)
+        if chosen:
+            return chosen
     return None
 
 
@@ -158,12 +186,12 @@ def gather(opp, li_rows=None, contract_rows=None, force_tid=None):
     Signing — not whatever pick_contract's newest-Completed heuristic returns)."""
     acct = (opp.get("Account") or {}).get("Name") or opp.get("AccountName")
     contracts = contract_rows if contract_rows is not None else account_contracts(opp["AccountId"])
+    li = li_rows if li_rows is not None else line_items(opp["Id"])
     if force_tid:
         chosen = next((c for c in contracts if c.get("SpotDraft_ID__c") == force_tid), None) \
             or {"SpotDraft_ID__c": force_tid, "Status__c": "Signing"}
     else:
-        chosen = pick_contract(contracts)
-    li = li_rows if li_rows is not None else line_items(opp["Id"])
+        chosen = pick_contract(contracts, products=[_li_product(r) for r in li])
     bundle = {
         "opportunity": {k: opp.get(k) for k in
                         ["Name", "StageName", "Type", "Shop_ID__c", "Start_Date__c",
